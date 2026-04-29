@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  trips     Trip[]
+}
+
+model Trip {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  coverImage  String?
+  status      String      @default("planning")
+  budget      Float?
+  currency    String      @default("USD")
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  days        Day[]
+  stays       Stay[]
+  transports  Transport[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Day {
+  id         String     @id @default(cuid())
+  date       DateTime
+  tripId     String
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  activities Activity[]
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   @default("sightseeing")
+  description String?
+  location    String?
+  address     String?
+  lat         Float?
+  lng         Float?
+  startTime   String?
+  endTime     String?
+  duration    Int?
+  cost        Float?
+  currency    String   @default("USD")
+  rating      Float?
+  bookingUrl  String?
+  notes       String?
+  tags        String?
+  imageUrl    String?
+  order       Int      @default(0)
+  timeOfDay   String   @default("morning")
+  dayId       String
+  day         Day      @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Stay {
+  id         String   @id @default(cuid())
+  name       String
+  type       String   @default("hotel")
+  address    String?
+  lat        Float?
+  lng        Float?
+  checkIn    DateTime
+  checkOut   DateTime
+  bookingRef String?
+  bookingUrl String?
+  cost       Float?
+  currency   String   @default("USD")
+  notes      String?
+  imageUrl   String?
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Transport {
+  id            String   @id @default(cuid())
+  type          String   @default("flight")
+  fromLocation  String
+  toLocation    String
+  fromLat       Float?
+  fromLng       Float?
+  toLat         Float?
+  toLng         Float?
+  departureTime DateTime
+  arrivalTime   DateTime
+  carrier       String?
+  bookingRef    String?
+  bookingUrl    String?
+  cost          Float?
+  currency      String   @default("USD")
+  notes         String?
+  tripId        String
+  trip          Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

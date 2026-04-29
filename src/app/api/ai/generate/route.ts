@@ -1,0 +1,78 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { generateItinerary } from '@/lib/ai';
+import { prisma } from '@/lib/db';
+import { addDays } from 'date-fns';
+
+const DEMO_USER_EMAIL = 'demo@travelr.app';
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+
+  try {
+    const result = await generateItinerary({
+      destinations: body.destinations,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      budget: body.budget,
+      style: body.style,
+      interests: body.interests,
+    });
+
+    if (body.saveToTrip) {
+      const user = await prisma.user.findUnique({ where: { email: DEMO_USER_EMAIL } });
+      if (!user) return NextResponse.json(result);
+
+      const start = new Date(body.startDate);
+      const end = new Date(body.endDate);
+
+      const trip = await prisma.trip.create({
+        data: {
+          name: result.title,
+          description: result.description,
+          startDate: start,
+          endDate: end,
+          status: 'planning',
+          userId: user.id,
+          days: {
+            create: result.days.map((day: { dayNumber: number; activities: Array<{
+              name: string; type: string; description?: string; location?: string;
+              address?: string; lat?: number; lng?: number; startTime?: string;
+              endTime?: string; duration?: number; cost?: number; timeOfDay?: string;
+              rating?: number; bookingUrl?: string; tags?: string[];
+            }> }) => ({
+              date: addDays(start, day.dayNumber - 1),
+              activities: {
+                create: day.activities.map((act, idx) => ({
+                  name: act.name,
+                  type: act.type,
+                  description: act.description || null,
+                  location: act.location || null,
+                  address: act.address || null,
+                  lat: act.lat || null,
+                  lng: act.lng || null,
+                  startTime: act.startTime || null,
+                  endTime: act.endTime || null,
+                  duration: act.duration || null,
+                  cost: act.cost || null,
+                  timeOfDay: act.timeOfDay || 'morning',
+                  rating: act.rating || null,
+                  bookingUrl: act.bookingUrl || null,
+                  tags: act.tags ? JSON.stringify(act.tags) : null,
+                  order: idx,
+                })),
+              },
+            })),
+          },
+        },
+        include: { days: { include: { activities: true } }, stays: true, transports: true },
+      });
+
+      return NextResponse.json({ ...result, tripId: trip.id });
+    }
+
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error('AI generate error:', error);
+    return NextResponse.json({ error: 'Failed to generate itinerary' }, { status: 500 });
+  }
+}
