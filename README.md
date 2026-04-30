@@ -15,40 +15,83 @@ A modern, full-stack travel planning app combining structured itinerary planning
 ## Tech Stack
 
 - **Frontend**: Next.js 14 (App Router), TypeScript, Tailwind CSS
-- **Database**: SQLite via Prisma ORM
+- **Database**: PostgreSQL via [Neon](https://neon.tech) + Prisma ORM
 - **Maps**: Leaflet + OpenStreetMap (no API key needed)
 - **AI**: Claude API (optional — falls back to mock data)
 - **Drag & Drop**: @dnd-kit/core
-- **State**: Zustand (local) + SWR-style fetch
+- **Hosting**: [Vercel](https://vercel.com)
 
-## Quick Start
+---
+
+## 🚀 Deploy to Vercel (recommended)
+
+### 1. Set up Neon Postgres (free)
+
+1. Go to [neon.tech](https://neon.tech) → **Sign up free**
+2. Create a new project — name it `travelr`
+3. From the dashboard, open **Connection Details**
+4. Copy both connection strings:
+   - **Pooled connection** → use as `DATABASE_URL` (has `pgbouncer=true`)
+   - **Direct connection** → use as `DIRECT_URL` (no pgbouncer)
+
+### 2. Deploy to Vercel
+
+```bash
+# Option A — Vercel CLI
+npm i -g vercel
+vercel
+
+# Option B — GitHub import
+# Push this repo to GitHub, then go to vercel.com/new and import it
+```
+
+### 3. Add environment variables in Vercel dashboard
+
+Go to your project → **Settings → Environment Variables** and add:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Neon **pooled** connection string |
+| `DIRECT_URL` | Neon **direct** connection string |
+| `ANTHROPIC_API_KEY` | Your key from [console.anthropic.com](https://console.anthropic.com) (optional) |
+
+### 4. Run migrations & seed
+
+After your first deploy, run these once from your local machine with the Neon URLs in `.env.local`:
+
+```bash
+npx prisma db push
+npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
+```
+
+That's it — Vercel redeploys automatically on every `git push`.
+
+---
+
+## Local Development
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Set up database
-DATABASE_URL="file:./dev.db" npx prisma db push
+# 2. Copy env file and fill in your values
+cp .env.local.example .env.local
 
-# 3. Seed demo data (Paris & Amsterdam + Tokyo trips)
-DATABASE_URL="file:./dev.db" npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
+# 3. Push schema to your database
+npx prisma db push
 
-# 4. (Optional) Add Claude API key in .env.local
-echo 'ANTHROPIC_API_KEY=your-key-here' >> .env.local
+# 4. Seed demo data (Paris & Amsterdam + Tokyo trips)
+npx ts-node --compiler-options '{"module":"CommonJS"}' prisma/seed.ts
 
 # 5. Run dev server
 npm run dev
 ```
 
-Open http://localhost:3000
+Open [http://localhost:3000](http://localhost:3000)
 
-## Environment Variables
+> **Local tip:** For quick local dev without Postgres, temporarily switch `schema.prisma` to `provider = "sqlite"` and use `DATABASE_URL="file:./dev.db"`.
 
-```
-DATABASE_URL="file:./dev.db"
-ANTHROPIC_API_KEY=""          # Optional: enables real AI generation
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-```
+---
 
 ## Project Structure
 
@@ -63,8 +106,6 @@ src/
 │   ├── ai/                # AIPanel, SuggestionCard
 │   ├── layout/            # Sidebar, TripNav
 │   ├── map/               # MapView (Leaflet)
-│   ├── stays/             # Stay components
-│   ├── transport/         # Transport components
 │   ├── trips/             # TripCard
 │   └── ui/                # Button, Input, Modal, Badge
 ├── lib/                   # db.ts, ai.ts, utils.ts
@@ -72,8 +113,11 @@ src/
 └── prisma/                # Schema + seed data
 ```
 
-## Demo Data
+## Environment Variables
 
-The seed script creates two complete trips:
-- **Paris & Amsterdam Adventure** (7 days, 20+ activities, stays, transport)
-- **Tokyo & Kyoto Explorer** (14 days)
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | ✅ | Postgres connection string (pooled for Vercel) |
+| `DIRECT_URL` | ✅ on Vercel | Postgres direct connection (for migrations) |
+| `ANTHROPIC_API_KEY` | Optional | Enables real AI generation (mock data used without it) |
+| `NEXT_PUBLIC_APP_URL` | Optional | Your deployed URL |
