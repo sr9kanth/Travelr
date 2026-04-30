@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
       style: body.style,
       interests: body.interests,
       countryDays: body.countryDays,
+      freePrompt: body.freePrompt,
     }, provider);
 
     if (body.saveToTrip) {

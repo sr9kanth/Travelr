@@ -194,6 +194,7 @@ export async function generateItinerary(
     style: string;
     interests: string[];
     countryDays?: Array<{ country: string; days: number }>;
+    freePrompt?: string;
   },
   provider: AIProvider = getDefaultProvider(),
 ) {
@@ -215,7 +216,7 @@ Dates: ${params.startDate} to ${params.endDate}
 Total days: ${totalDays} (you MUST generate exactly ${totalDays} day entries)${countryBreakdown}
 Budget: ${params.budget}
 Travel Style: ${params.style}
-Interests: ${params.interests.join(', ')}
+Interests: ${params.interests.join(', ')}${params.freePrompt ? `\nAdditional instructions from traveller: ${params.freePrompt}` : ''}
 
 Return a JSON object with this exact structure:
 {
