@@ -12,12 +12,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await generateItinerary({
-      destinations: body.destinations,
-      startDate: body.startDate,
-      endDate: body.endDate,
+      destinations: body.destinations ?? [],
+      startDate: body.startDate || undefined,
+      endDate: body.endDate || undefined,
       budget: body.budget,
       style: body.style,
-      interests: body.interests,
+      interests: body.interests ?? [],
       countryDays: body.countryDays,
       freePrompt: body.freePrompt,
     }, provider);
@@ -26,8 +26,10 @@ export async function POST(req: NextRequest) {
       const user = await prisma.user.findUnique({ where: { email: DEMO_USER_EMAIL } });
       if (!user) return NextResponse.json(result);
 
-      const start = new Date(body.startDate);
-      const end = new Date(body.endDate);
+      // Use provided dates or derive from result days count
+      const totalDays: number = result.days?.length ?? 1;
+      const start = body.startDate ? new Date(body.startDate) : new Date();
+      const end = body.endDate ? new Date(body.endDate) : addDays(start, totalDays - 1);
 
       const trip = await prisma.trip.create({
         data: {
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
           status: 'planning',
           userId: user.id,
           days: {
-            create: result.days.map((day: { dayNumber: number; activities: Array<{
+            create: (result.days ?? []).map((day: { dayNumber: number; activities: Array<{
               name: string; type: string; description?: string; location?: string;
               address?: string; lat?: number; lng?: number; startTime?: string;
               endTime?: string; duration?: number; cost?: number; timeOfDay?: string;
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
             }> }) => ({
               date: addDays(start, day.dayNumber - 1),
               activities: {
-                create: day.activities.map((act, idx) => ({
+                create: (day.activities ?? []).map((act, idx) => ({
                   name: act.name,
                   type: act.type,
                   description: act.description || null,

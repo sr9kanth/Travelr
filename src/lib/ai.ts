@@ -187,36 +187,98 @@ function extractJSON(text: string, type: 'object' | 'array'): string | null {
 // ── Itinerary Generator ───────────────────────────────────────────────────────
 export async function generateItinerary(
   params: {
-    destinations: string[];
-    startDate: string;
-    endDate: string;
-    budget: string;
-    style: string;
-    interests: string[];
+    destinations?: string[];
+    startDate?: string;
+    endDate?: string;
+    budget?: string;
+    style?: string;
+    interests?: string[];
     countryDays?: Array<{ country: string; days: number }>;
     freePrompt?: string;
   },
   provider: AIProvider = getDefaultProvider(),
 ) {
-  const totalDays = Math.max(
-    1,
-    Math.round((new Date(params.endDate).getTime() - new Date(params.startDate).getTime()) / 86400000) + 1,
-  );
+  const freeTextMode = !!params.freePrompt && (!params.destinations || params.destinations.length === 0);
 
-  if (provider === 'mock') return getMockItinerary({ ...params, totalDays });
+  // Compute totalDays only when we have valid dates
+  let totalDays = 7;
+  if (params.startDate && params.endDate) {
+    const start = new Date(params.startDate).getTime();
+    const end = new Date(params.endDate).getTime();
+    if (!isNaN(start) && !isNaN(end) && end >= start) {
+      totalDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+    }
+  } else if (params.countryDays && params.countryDays.length > 0) {
+    totalDays = params.countryDays.reduce((s, c) => s + c.days, 0);
+  }
+
+  if (provider === 'mock') {
+    return getMockItinerary({
+      destinations: params.destinations?.length ? params.destinations : ['Your Destination'],
+      style: params.style ?? 'Moderate',
+      totalDays,
+    });
+  }
 
   const countryBreakdown = params.countryDays && params.countryDays.length > 1
     ? `\nCountry breakdown:\n${params.countryDays.map((c) => `- ${c.country}: ${c.days} days`).join('\n')}`
     : '';
 
-  const prompt = `You are an expert travel planner. Create a detailed day-by-day itinerary.
+  // When user typed a free-text description, put it front-and-centre
+  const prompt = freeTextMode
+    ? `You are an expert travel planner. Plan a complete trip based on the traveller's request below.
 
-Destinations: ${params.destinations.join(', ')}
-Dates: ${params.startDate} to ${params.endDate}
+Traveller's request: ${params.freePrompt}
+
+Extract all details (destinations, dates, duration, budget, style) from the request above.
+Generate a complete day-by-day itinerary covering every day of the trip.
+
+Return a JSON object with this exact structure:
+{
+  "title": "Trip name",
+  "description": "Brief overview",
+  "days": [
+    {
+      "dayNumber": 1,
+      "theme": "Day theme",
+      "activities": [
+        {
+          "name": "Activity name",
+          "type": "food|sightseeing|culture|nature|shopping|experience|hidden_gem",
+          "description": "Description",
+          "location": "Area name",
+          "address": "Full address",
+          "lat": 0.0,
+          "lng": 0.0,
+          "startTime": "09:00",
+          "endTime": "11:00",
+          "duration": 120,
+          "cost": 25,
+          "timeOfDay": "morning|afternoon|evening|night",
+          "rating": 4.5,
+          "tags": ["tag1", "tag2"],
+          "bookingUrl": null
+        }
+      ]
+    }
+  ],
+  "suggestedStays": [
+    { "name": "Hotel name", "type": "hotel", "address": "Address", "lat": 0.0, "lng": 0.0, "cost": 150, "notes": "Notes" }
+  ],
+  "suggestedTransport": [
+    { "type": "flight|train|bus", "fromLocation": "From", "toLocation": "To", "notes": "Details" }
+  ]
+}
+
+Use real places with accurate lat/lng coordinates. Return ONLY valid JSON, no markdown fences.`
+    : `You are an expert travel planner. Create a detailed day-by-day itinerary.
+
+Destinations: ${(params.destinations ?? []).join(', ')}
+${params.startDate ? `Dates: ${params.startDate} to ${params.endDate}` : ''}
 Total days: ${totalDays} (you MUST generate exactly ${totalDays} day entries)${countryBreakdown}
-Budget: ${params.budget}
-Travel Style: ${params.style}
-Interests: ${params.interests.join(', ')}${params.freePrompt ? `\nAdditional instructions from traveller: ${params.freePrompt}` : ''}
+Budget: ${params.budget ?? 'moderate'}
+Travel Style: ${params.style ?? 'Moderate'}
+Interests: ${(params.interests ?? []).join(', ')}${params.freePrompt ? `\nAdditional instructions from traveller: ${params.freePrompt}` : ''}
 
 Return a JSON object with this exact structure:
 {
@@ -264,7 +326,11 @@ Use real places with accurate lat/lng coordinates. Return ONLY valid JSON, no ma
     return JSON.parse(text);
   } catch (err) {
     if (err instanceof AIError) throw err;
-    return getMockItinerary({ ...params, totalDays });
+    return getMockItinerary({
+      destinations: params.destinations?.length ? params.destinations : ['Your Destination'],
+      style: params.style ?? 'Moderate',
+      totalDays,
+    });
   }
 }
 
