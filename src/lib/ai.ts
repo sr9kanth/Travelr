@@ -1,20 +1,203 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { ActivityType, AISuggestion } from '@/types';
-import { ACTIVITY_ICONS } from './utils';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
+import type { AISuggestion } from '@/types';
 
-const client = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
+// ── Provider types ────────────────────────────────────────────────────────────
+export type AIProvider = 'anthropic' | 'gemini' | 'groq' | 'moonshot' | 'mock';
+
+export interface ProviderStatus {
+  id: AIProvider;
+  name: string;
+  model: string;
+  available: boolean;
+  hasKey: boolean;
+  rateLimited: boolean;
+  free: boolean;
+  description: string;
+}
+
+// ── Key detection (server-side only) ─────────────────────────────────────────
+export function getProviderStatuses(): ProviderStatus[] {
+  return [
+    {
+      id: 'anthropic',
+      name: 'Claude',
+      model: 'claude-opus-4-5',
+      hasKey: !!process.env.ANTHROPIC_API_KEY,
+      available: !!process.env.ANTHROPIC_API_KEY,
+      rateLimited: false,
+      free: false,
+      description: 'Best quality itineraries',
+    },
+    {
+      id: 'gemini',
+      name: 'Gemini',
+      model: 'gemini-1.5-flash',
+      hasKey: !!process.env.GEMINI_API_KEY,
+      available: !!process.env.GEMINI_API_KEY,
+      rateLimited: false,
+      free: true,
+      description: 'Free tier available',
+    },
+    {
+      id: 'groq',
+      name: 'Groq',
+      model: 'llama-3.3-70b-versatile',
+      hasKey: !!process.env.GROQ_API_KEY,
+      available: !!process.env.GROQ_API_KEY,
+      rateLimited: false,
+      free: true,
+      description: 'Fast & free tier',
+    },
+    {
+      id: 'moonshot',
+      name: 'Kimi (Moonshot)',
+      model: 'moonshot-v1-32k',
+      hasKey: !!process.env.MOONSHOT_API_KEY,
+      available: !!process.env.MOONSHOT_API_KEY,
+      rateLimited: false,
+      free: false,
+      description: 'Long context, multilingual',
+    },
+    {
+      id: 'mock',
+      name: 'Demo',
+      model: 'mock',
+      hasKey: true,
+      available: true,
+      rateLimited: false,
+      free: true,
+      description: 'Sample data, no key needed',
+    },
+  ];
+}
+
+export function getDefaultProvider(): AIProvider {
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
+  if (process.env.GEMINI_API_KEY) return 'gemini';
+  if (process.env.GROQ_API_KEY) return 'groq';
+  if (process.env.MOONSHOT_API_KEY) return 'moonshot';
+  return 'mock';
+}
+
+// ── Error classification ──────────────────────────────────────────────────────
+export class AIError extends Error {
+  constructor(
+    message: string,
+    public code: 'rate_limited' | 'no_key' | 'model_error' | 'unknown',
+    public provider: AIProvider,
+  ) {
+    super(message);
+    this.name = 'AIError';
+  }
+}
+
+function classifyError(err: unknown, provider: AIProvider): AIError {
+  const msg = err instanceof Error ? err.message : String(err);
+  const status = (err as { status?: number })?.status;
+  if (status === 429 || msg.includes('rate') || msg.includes('quota') || msg.includes('limit')) {
+    return new AIError('Rate limited', 'rate_limited', provider);
+  }
+  if (status === 401 || msg.includes('key') || msg.includes('auth') || msg.includes('permission')) {
+    return new AIError('Invalid or missing API key', 'no_key', provider);
+  }
+  return new AIError(msg, 'unknown', provider);
+}
+
+// ── Moonshot (OpenAI-compatible) ──────────────────────────────────────────────
+async function askMoonshot(prompt: string, maxTokens: number): Promise<string> {
+  if (!process.env.MOONSHOT_API_KEY) throw new AIError('No API key', 'no_key', 'moonshot');
+  const res = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.MOONSHOT_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'moonshot-v1-32k',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
+    throw classifyError({ status: res.status, message: err?.error?.message ?? res.statusText }, 'moonshot');
+  }
+  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+  return data.choices[0]?.message?.content ?? '';
+}
+
+// ── Shared AI call ────────────────────────────────────────────────────────────
+async function ask(prompt: string, provider: AIProvider, maxTokens = 4096): Promise<string> {
+  if (provider === 'anthropic') {
+    if (!process.env.ANTHROPIC_API_KEY) throw new AIError('No API key', 'no_key', 'anthropic');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    try {
+      const msg = await client.messages.create({
+        model: 'claude-opus-4-5',
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return msg.content[0].type === 'text' ? msg.content[0].text : '';
+    } catch (err) { throw classifyError(err, 'anthropic'); }
+  }
+
+  if (provider === 'gemini') {
+    if (!process.env.GEMINI_API_KEY) throw new AIError('No API key', 'no_key', 'gemini');
+    const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    try {
+      const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (err) { throw classifyError(err, 'gemini'); }
+  }
+
+  if (provider === 'groq') {
+    if (!process.env.GROQ_API_KEY) throw new AIError('No API key', 'no_key', 'groq');
+    const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    try {
+      const completion = await client.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+      });
+      return completion.choices[0]?.message?.content ?? '';
+    } catch (err) { throw classifyError(err, 'groq'); }
+  }
+
+  if (provider === 'moonshot') {
+    try {
+      return await askMoonshot(prompt, maxTokens);
+    } catch (err) {
+      if (err instanceof AIError) throw err;
+      throw classifyError(err, 'moonshot');
+    }
+  }
+
+  return '';
+}
+
+function extractJSON(text: string, type: 'object' | 'array'): string | null {
+  const pattern = type === 'object' ? /\{[\s\S]*\}/ : /\[[\s\S]*\]/;
+  const match = text.match(pattern);
+  return match ? match[0] : null;
+}
 
 // ── Itinerary Generator ───────────────────────────────────────────────────────
-export async function generateItinerary(params: {
-  destinations: string[];
-  startDate: string;
-  endDate: string;
-  budget: string;
-  style: string;
-  interests: string[];
-}) {
+export async function generateItinerary(
+  params: {
+    destinations: string[];
+    startDate: string;
+    endDate: string;
+    budget: string;
+    style: string;
+    interests: string[];
+  },
+  provider: AIProvider = getDefaultProvider(),
+) {
+  if (provider === 'mock') return getMockItinerary(params);
+
   const prompt = `You are an expert travel planner. Create a detailed day-by-day itinerary.
 
 Destinations: ${params.destinations.join(', ')}
@@ -53,67 +236,52 @@ Return a JSON object with this exact structure:
     }
   ],
   "suggestedStays": [
-    {
-      "name": "Hotel name",
-      "type": "hotel",
-      "address": "Address",
-      "lat": 0.0,
-      "lng": 0.0,
-      "cost": 150,
-      "notes": "Notes"
-    }
+    { "name": "Hotel name", "type": "hotel", "address": "Address", "lat": 0.0, "lng": 0.0, "cost": 150, "notes": "Notes" }
   ],
   "suggestedTransport": [
-    {
-      "type": "flight|train|bus",
-      "fromLocation": "From",
-      "toLocation": "To",
-      "notes": "Details"
-    }
+    { "type": "flight|train|bus", "fromLocation": "From", "toLocation": "To", "notes": "Details" }
   ]
 }
 
-Be specific with real places. Include lat/lng coordinates. Return ONLY valid JSON, no markdown.`;
+Use real places with accurate lat/lng coordinates. Return ONLY valid JSON, no markdown fences.`;
 
-  if (!client) return getMockItinerary(params);
-
-  const message = await client.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 4096,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = message.content[0].type === 'text' ? message.content[0].text : '';
   try {
+    const text = await ask(prompt, provider, 4096);
+    const json = extractJSON(text, 'object');
+    if (json) return JSON.parse(json);
     return JSON.parse(text);
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
-    throw new Error('Failed to parse AI response');
+  } catch (err) {
+    if (err instanceof AIError) throw err;
+    return getMockItinerary(params);
   }
 }
 
-// ── Nearby Suggestions ────────────────────────────────────────────────────────
-export async function getNearbyActivities(params: {
-  lat: number;
-  lng: number;
-  location: string;
-  timeOfDay: string;
-  availableMinutes: number;
-  existingActivities: string[];
-  radius: number;
-  interests?: string[];
-}): Promise<AISuggestion[]> {
+// ── Nearby Activity Suggestions ───────────────────────────────────────────────
+export async function getNearbyActivities(
+  params: {
+    lat: number;
+    lng: number;
+    location: string;
+    timeOfDay: string;
+    availableMinutes: number;
+    existingActivities: string[];
+    radius: number;
+    interests?: string[];
+  },
+  provider: AIProvider = getDefaultProvider(),
+): Promise<AISuggestion[]> {
+  if (provider === 'mock') return getMockSuggestions(params);
+
   const prompt = `You are a local travel expert. Suggest nearby activities.
 
 Current location: ${params.location} (${params.lat}, ${params.lng})
 Time of day: ${params.timeOfDay}
 Available time: ${params.availableMinutes} minutes
 Radius: ${params.radius} km
-Existing activities to avoid: ${params.existingActivities.join(', ')}
+Avoid: ${params.existingActivities.join(', ')}
 User interests: ${(params.interests || []).join(', ')}
 
-Return a JSON array of 6 suggestions:
+Return a JSON array of exactly 6 suggestions:
 [
   {
     "id": "unique-id-1",
@@ -130,37 +298,34 @@ Return a JSON array of 6 suggestions:
     "distance": 0.5,
     "distanceText": "500m walk",
     "timeText": "6 min walk",
-    "reason": "Why this is perfect right now",
+    "reason": "Why this is great right now",
     "tags": ["tag1", "tag2"]
   }
 ]
 
-Focus on: walkability, open at this time of day, variety of types, hidden gems.
-Return ONLY valid JSON array, no markdown.`;
-
-  if (!client) return getMockSuggestions(params);
+Focus on: walkable distance, open at this time, variety, hidden gems. Return ONLY a valid JSON array.`;
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const text = message.content[0].type === 'text' ? message.content[0].text : '';
-    const match = text.match(/\[[\s\S]*\]/);
-    if (match) return JSON.parse(match[0]);
+    const text = await ask(prompt, provider, 2048);
+    const json = extractJSON(text, 'array');
+    if (json) return JSON.parse(json);
     return getMockSuggestions(params);
-  } catch {
+  } catch (err) {
+    if (err instanceof AIError) throw err;
     return getMockSuggestions(params);
   }
 }
 
-// ── Optimizer ─────────────────────────────────────────────────────────────────
-export async function optimizeItinerary(params: {
-  activities: Array<{ id: string; name: string; lat?: number | null; lng?: number | null; duration?: number | null; timeOfDay: string; type: string }>;
-  pace: 'relaxed' | 'moderate' | 'packed';
-}) {
+// ── Route Optimizer ───────────────────────────────────────────────────────────
+export async function optimizeItinerary(
+  params: {
+    activities: Array<{ id: string; name: string; lat?: number | null; lng?: number | null; duration?: number | null; timeOfDay: string; type: string }>;
+    pace: 'relaxed' | 'moderate' | 'packed';
+  },
+  provider: AIProvider = getDefaultProvider(),
+) {
+  if (provider === 'mock') return params.activities.map((a) => a.id);
+
   const prompt = `You are a route optimization expert. Reorder these activities for the optimal route.
 
 Activities: ${JSON.stringify(params.activities, null, 2)}
@@ -168,62 +333,43 @@ Pace: ${params.pace}
 
 Rules:
 - Cluster geographically nearby activities together
-- Consider logical time-of-day flow (morning → afternoon → evening)
-- Minimize travel distance between consecutive activities
-- For "relaxed" pace: max 3 activities
-- For "moderate" pace: max 4-5 activities
-- For "packed" pace: up to 6-7 activities
+- Logical time-of-day flow (morning → afternoon → evening)
+- Minimize travel distance between consecutive stops
 
-Return a JSON array of activity IDs in the optimized order:
-["id1", "id2", "id3"]
-
-Return ONLY the JSON array, no markdown.`;
-
-  if (!client) {
-    return params.activities.map((a) => a.id);
-  }
+Return ONLY a JSON array of activity IDs in optimized order: ["id1", "id2", "id3"]`;
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const text = message.content[0].type === 'text' ? message.content[0].text : '';
-    const match = text.match(/\[[\s\S]*\]/);
-    if (match) return JSON.parse(match[0]);
+    const text = await ask(prompt, provider, 512);
+    const json = extractJSON(text, 'array');
+    if (json) return JSON.parse(json);
     return params.activities.map((a) => a.id);
-  } catch {
+  } catch (err) {
+    if (err instanceof AIError) throw err;
     return params.activities.map((a) => a.id);
   }
 }
 
-// ── Mock Data ─────────────────────────────────────────────────────────────────
-function getMockItinerary(params: { destinations: string[]; startDate: string; endDate: string; budget: string; style: string; interests: string[] }) {
+// ── Mock fallbacks ────────────────────────────────────────────────────────────
+function getMockItinerary(params: { destinations: string[]; style: string }) {
   const dest = params.destinations[0] || 'Paris';
   return {
     title: `${dest} Getaway`,
     description: `A wonderful trip to ${dest} tailored to your ${params.style} travel style.`,
-    days: [
-      {
-        dayNumber: 1,
-        theme: `Arrival & First Impressions of ${dest}`,
-        activities: [
-          { name: `${dest} City Center Walk`, type: 'sightseeing', description: `Explore the heart of ${dest}`, location: 'City Center', address: `City Center, ${dest}`, lat: 48.8566, lng: 2.3522, startTime: '14:00', endTime: '16:00', duration: 120, cost: 0, timeOfDay: 'afternoon', rating: 4.5, tags: ['walk', 'explore'] },
-          { name: 'Welcome Dinner', type: 'food', description: 'Local cuisine to kick off the trip', location: 'Old Town', address: `Old Town, ${dest}`, lat: 48.8556, lng: 2.3510, startTime: '19:00', endTime: '21:00', duration: 120, cost: 50, timeOfDay: 'evening', rating: 4.3, tags: ['dinner', 'local'] },
-        ],
-      },
-    ],
-    suggestedStays: [
-      { name: `${dest} Central Hotel`, type: 'hotel', address: `Central District, ${dest}`, lat: 48.8566, lng: 2.3522, cost: 150, notes: 'Great location' },
-    ],
+    days: [{
+      dayNumber: 1,
+      theme: `Arrival & First Impressions`,
+      activities: [
+        { name: `${dest} City Centre Walk`, type: 'sightseeing', description: `Explore the heart of ${dest}`, location: 'City Centre', address: `City Centre, ${dest}`, lat: 48.8566, lng: 2.3522, startTime: '14:00', endTime: '16:00', duration: 120, cost: 0, timeOfDay: 'afternoon', rating: 4.5, tags: ['walk', 'explore'] },
+        { name: 'Welcome Dinner', type: 'food', description: 'Local cuisine to kick off the trip', location: 'Old Town', address: `Old Town, ${dest}`, lat: 48.8556, lng: 2.3510, startTime: '19:00', endTime: '21:00', duration: 120, cost: 50, timeOfDay: 'evening', rating: 4.3, tags: ['dinner', 'local'] },
+      ],
+    }],
+    suggestedStays: [{ name: `${dest} Central Hotel`, type: 'hotel', address: `Central District, ${dest}`, lat: 48.8566, lng: 2.3522, cost: 150, notes: 'Great location' }],
     suggestedTransport: [],
   };
 }
 
 function getMockSuggestions(params: { lat: number; lng: number; location: string; timeOfDay: string }): AISuggestion[] {
-  const suggestions: AISuggestion[] = [
+  return [
     { id: 'mock-1', name: 'Local Market', type: 'shopping', description: 'Vibrant local market with fresh produce and crafts', location: params.location, address: `Market St, ${params.location}`, lat: params.lat + 0.003, lng: params.lng + 0.002, duration: 60, cost: 20, rating: 4.4, distance: 0.3, distanceText: '300m walk', timeText: '4 min walk', reason: 'Highly rated local experience, perfect for this time of day', tags: ['market', 'local', 'shopping'] },
     { id: 'mock-2', name: 'Cozy Café', type: 'food', description: 'Artisan coffee and homemade pastries', location: params.location, address: `Café Lane, ${params.location}`, lat: params.lat - 0.002, lng: params.lng + 0.004, duration: 45, cost: 12, rating: 4.6, distance: 0.5, distanceText: '500m walk', timeText: '6 min walk', reason: 'Excellent reviews, great for a break', tags: ['coffee', 'cafe', 'cozy'] },
     { id: 'mock-3', name: 'City Park', type: 'nature', description: 'Beautiful park with gardens and fountains', location: params.location, address: `Park Ave, ${params.location}`, lat: params.lat + 0.005, lng: params.lng - 0.003, duration: 90, cost: 0, rating: 4.5, distance: 0.8, distanceText: '800m walk', timeText: '10 min walk', reason: 'Free, relaxing, and highly recommended', tags: ['park', 'nature', 'free'] },
@@ -231,5 +377,4 @@ function getMockSuggestions(params: { lat: number; lng: number; location: string
     { id: 'mock-5', name: 'Street Food Corner', type: 'food', description: 'Popular street food spot with local delicacies', location: params.location, address: `Food St, ${params.location}`, lat: params.lat + 0.001, lng: params.lng + 0.006, duration: 30, cost: 8, rating: 4.3, distance: 0.2, distanceText: '200m walk', timeText: '3 min walk', reason: 'Quick stop, very close, great local food', tags: ['street food', 'quick', 'local'] },
     { id: 'mock-6', name: 'Historic Church', type: 'sightseeing', description: 'Beautiful historic church with stunning architecture', location: params.location, address: `Church Square, ${params.location}`, lat: params.lat - 0.006, lng: params.lng + 0.001, duration: 45, cost: 0, rating: 4.4, distance: 1.5, distanceText: '1.5km', timeText: '18 min walk', reason: 'Free to enter, remarkable architecture', tags: ['historic', 'architecture', 'free'] },
   ];
-  return suggestions;
 }

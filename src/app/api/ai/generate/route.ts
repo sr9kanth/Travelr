@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateItinerary } from '@/lib/ai';
+import { generateItinerary, AIError, getDefaultProvider } from '@/lib/ai';
+import type { AIProvider } from '@/lib/ai';
 import { prisma } from '@/lib/db';
 import { addDays } from 'date-fns';
 
@@ -7,6 +8,7 @@ const DEMO_USER_EMAIL = 'demo@travelr.app';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
+  const provider: AIProvider = body.provider ?? getDefaultProvider();
 
   try {
     const result = await generateItinerary({
@@ -16,7 +18,7 @@ export async function POST(req: NextRequest) {
       budget: body.budget,
       style: body.style,
       interests: body.interests,
-    });
+    }, provider);
 
     if (body.saveToTrip) {
       const user = await prisma.user.findUnique({ where: { email: DEMO_USER_EMAIL } });
@@ -72,6 +74,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof AIError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, provider: error.provider },
+        { status: error.code === 'rate_limited' ? 429 : 400 },
+      );
+    }
     console.error('AI generate error:', error);
     return NextResponse.json({ error: 'Failed to generate itinerary' }, { status: 500 });
   }

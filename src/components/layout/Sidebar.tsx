@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Map, Compass, Plus, Home, Settings, Sparkles, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import AIProviderPicker from '@/components/ai/AIProviderPicker';
 
 const navItems = [
   { href: '/',          icon: Home,    label: 'Dashboard' },
@@ -82,23 +83,14 @@ export default function Sidebar() {
         {/* Divider */}
         <div className="border-t border-white/5 my-4" />
 
-        {/* AI Features badge */}
-        <div className="mx-1 rounded-2xl p-4 overflow-hidden relative"
-          style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(167,139,250,0.05))', border: '1px solid rgba(99,102,241,0.2)' }}>
-          <div className="absolute top-0 right-0 w-20 h-20 rounded-full opacity-10"
-            style={{ background: 'radial-gradient(circle, #6366f1 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-brand-400" />
-            <p className="text-sm font-bold text-white">AI Features</p>
+        {/* AI Provider picker */}
+        <div className="mx-1 rounded-2xl p-3 overflow-hidden relative"
+          style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(167,139,250,0.04))', border: '1px solid rgba(99,102,241,0.15)' }}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <Sparkles className="w-3.5 h-3.5 text-brand-400" />
+            <p className="text-[11px] font-bold text-white uppercase tracking-wider">AI Model</p>
           </div>
-          <div className="space-y-1.5">
-            {['Itinerary generation', 'Route optimizer', 'Explore nearby'].map((f) => (
-              <div key={f} className="flex items-center gap-2">
-                <div className="w-1 h-1 rounded-full bg-brand-400" />
-                <p className="text-[11px] text-slate-400">{f}</p>
-              </div>
-            ))}
-          </div>
+          <AIProviderPicker />
         </div>
       </nav>
 

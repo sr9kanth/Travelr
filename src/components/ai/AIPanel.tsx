@@ -1,8 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { Sparkles, X, Loader2, RefreshCw, MapPin } from 'lucide-react';
+import { Sparkles, X, Loader2, RefreshCw, MapPin, AlertTriangle } from 'lucide-react';
 import SuggestionCard from './SuggestionCard';
 import Button from '@/components/ui/Button';
+import { useAIStore } from '@/store/aiStore';
 import type { Activity, AISuggestion } from '@/types';
 
 interface AIPanelProps {
@@ -18,9 +19,13 @@ export default function AIPanel({ activity, dayId, tripId, onClose, onAddActivit
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
   const [radius, setRadius] = useState(2);
+  const [error, setError] = useState<string | null>(null);
+
+  const { getActiveProvider, markRateLimited } = useAIStore();
 
   const fetchSuggestions = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch('/api/ai/suggestions', {
         method: 'POST',
@@ -33,13 +38,25 @@ export default function AIPanel({ activity, dayId, tripId, onClose, onAddActivit
           availableMinutes: 120,
           existingActivities: activity ? [activity.name] : [],
           radius,
+          provider: getActiveProvider(),
         }),
       });
+
+      if (res.status === 429) {
+        const data = await res.json();
+        markRateLimited(data.provider);
+        setError('Rate limit hit — switch to another AI model in the sidebar.');
+        setSuggestions([]);
+        setFetched(true);
+        return;
+      }
+
       const data = await res.json();
       setSuggestions(Array.isArray(data) ? data : []);
       setFetched(true);
     } catch {
       setSuggestions([]);
+      setFetched(true);
     } finally {
       setLoading(false);
     }
@@ -149,17 +166,25 @@ export default function AIPanel({ activity, dayId, tripId, onClose, onAddActivit
 
         {fetched && !loading && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-slate-500 font-medium">{suggestions.length} suggestions found</p>
-              <button onClick={fetchSuggestions} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium">
-                <RefreshCw className="w-3 h-3" />
-                Refresh
-              </button>
-            </div>
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 bg-amber-50 border border-amber-100 text-amber-700">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p className="text-xs leading-relaxed">{error}</p>
+              </div>
+            )}
+            {!error && (
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-slate-500 font-medium">{suggestions.length} suggestions found</p>
+                <button onClick={fetchSuggestions} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium">
+                  <RefreshCw className="w-3 h-3" />
+                  Refresh
+                </button>
+              </div>
+            )}
             {suggestions.map((s) => (
               <SuggestionCard key={s.id} suggestion={s} onAdd={handleAdd} />
             ))}
-            {suggestions.length === 0 && (
+            {suggestions.length === 0 && !error && (
               <div className="text-center py-8 text-slate-400 text-sm">
                 <p>No suggestions available.</p>
                 <button onClick={fetchSuggestions} className="mt-2 text-brand-500 hover:underline text-xs">Try again</button>
