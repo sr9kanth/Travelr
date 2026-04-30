@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       budget: body.budget,
       style: body.style,
       interests: body.interests,
+      countryDays: body.countryDays,
     }, provider);
 
     if (body.saveToTrip) {

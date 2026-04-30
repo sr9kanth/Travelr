@@ -193,15 +193,26 @@ export async function generateItinerary(
     budget: string;
     style: string;
     interests: string[];
+    countryDays?: Array<{ country: string; days: number }>;
   },
   provider: AIProvider = getDefaultProvider(),
 ) {
-  if (provider === 'mock') return getMockItinerary(params);
+  const totalDays = Math.max(
+    1,
+    Math.round((new Date(params.endDate).getTime() - new Date(params.startDate).getTime()) / 86400000) + 1,
+  );
+
+  if (provider === 'mock') return getMockItinerary({ ...params, totalDays });
+
+  const countryBreakdown = params.countryDays && params.countryDays.length > 1
+    ? `\nCountry breakdown:\n${params.countryDays.map((c) => `- ${c.country}: ${c.days} days`).join('\n')}`
+    : '';
 
   const prompt = `You are an expert travel planner. Create a detailed day-by-day itinerary.
 
 Destinations: ${params.destinations.join(', ')}
 Dates: ${params.startDate} to ${params.endDate}
+Total days: ${totalDays} (you MUST generate exactly ${totalDays} day entries)${countryBreakdown}
 Budget: ${params.budget}
 Travel Style: ${params.style}
 Interests: ${params.interests.join(', ')}
@@ -252,7 +263,7 @@ Use real places with accurate lat/lng coordinates. Return ONLY valid JSON, no ma
     return JSON.parse(text);
   } catch (err) {
     if (err instanceof AIError) throw err;
-    return getMockItinerary(params);
+    return getMockItinerary({ ...params, totalDays });
   }
 }
 
@@ -350,19 +361,51 @@ Return ONLY a JSON array of activity IDs in optimized order: ["id1", "id2", "id3
 }
 
 // ── Mock fallbacks ────────────────────────────────────────────────────────────
-function getMockItinerary(params: { destinations: string[]; style: string }) {
+const MOCK_THEMES = [
+  'Arrival & First Impressions', 'City Highlights', 'Culture & History', 'Food & Markets',
+  'Day Trip & Nature', 'Hidden Gems', 'Art & Architecture', 'Local Neighbourhood Walk',
+  'Museums & Galleries', 'Outdoor Adventures', 'Shopping & Souvenirs', 'Sunset & Evening Out',
+  'Beach & Relaxation', 'Street Food & Night Markets', 'Departure Day',
+];
+
+const MOCK_ACTIVITIES = [
+  { name: 'City Centre Walk', type: 'sightseeing', timeOfDay: 'morning', startTime: '09:00', endTime: '11:00', duration: 120, cost: 0, rating: 4.5, tags: ['walk', 'explore'] },
+  { name: 'Historic Old Town', type: 'culture', timeOfDay: 'morning', startTime: '10:00', endTime: '12:00', duration: 120, cost: 5, rating: 4.6, tags: ['history', 'culture'] },
+  { name: 'Local Market', type: 'shopping', timeOfDay: 'morning', startTime: '09:30', endTime: '11:00', duration: 90, cost: 20, rating: 4.4, tags: ['market', 'local'] },
+  { name: 'Museum Visit', type: 'culture', timeOfDay: 'afternoon', startTime: '13:00', endTime: '15:30', duration: 150, cost: 15, rating: 4.7, tags: ['museum', 'art'] },
+  { name: 'Viewpoint Hike', type: 'nature', timeOfDay: 'afternoon', startTime: '14:00', endTime: '16:30', duration: 150, cost: 0, rating: 4.8, tags: ['hike', 'views'] },
+  { name: 'Café & Coffee', type: 'food', timeOfDay: 'afternoon', startTime: '15:00', endTime: '16:00', duration: 60, cost: 10, rating: 4.5, tags: ['coffee', 'relax'] },
+  { name: 'Welcome Dinner', type: 'food', timeOfDay: 'evening', startTime: '19:00', endTime: '21:00', duration: 120, cost: 50, rating: 4.3, tags: ['dinner', 'local'] },
+  { name: 'Rooftop Bar', type: 'experience', timeOfDay: 'evening', startTime: '20:00', endTime: '22:00', duration: 120, cost: 30, rating: 4.6, tags: ['drinks', 'views'] },
+  { name: 'Street Food Tour', type: 'food', timeOfDay: 'evening', startTime: '18:30', endTime: '20:30', duration: 120, cost: 25, rating: 4.5, tags: ['food', 'street'] },
+];
+
+function getMockItinerary(params: { destinations: string[]; style: string; totalDays: number }) {
   const dest = params.destinations[0] || 'Paris';
-  return {
-    title: `${dest} Getaway`,
-    description: `A wonderful trip to ${dest} tailored to your ${params.style} travel style.`,
-    days: [{
-      dayNumber: 1,
-      theme: `Arrival & First Impressions`,
+  const totalDays = Math.min(params.totalDays, 30);
+
+  const days = Array.from({ length: totalDays }, (_, i) => {
+    const dayNum = i + 1;
+    const themeIdx = i % MOCK_THEMES.length;
+    const morningAct = MOCK_ACTIVITIES[(i * 2) % MOCK_ACTIVITIES.length];
+    const eveningAct = MOCK_ACTIVITIES[(i * 2 + 1) % MOCK_ACTIVITIES.length];
+    const baseLat = 48.8566 + (i * 0.003);
+    const baseLng = 2.3522 + (i * 0.002);
+
+    return {
+      dayNumber: dayNum,
+      theme: dayNum === 1 ? 'Arrival & First Impressions' : dayNum === totalDays ? 'Departure Day' : MOCK_THEMES[themeIdx],
       activities: [
-        { name: `${dest} City Centre Walk`, type: 'sightseeing', description: `Explore the heart of ${dest}`, location: 'City Centre', address: `City Centre, ${dest}`, lat: 48.8566, lng: 2.3522, startTime: '14:00', endTime: '16:00', duration: 120, cost: 0, timeOfDay: 'afternoon', rating: 4.5, tags: ['walk', 'explore'] },
-        { name: 'Welcome Dinner', type: 'food', description: 'Local cuisine to kick off the trip', location: 'Old Town', address: `Old Town, ${dest}`, lat: 48.8556, lng: 2.3510, startTime: '19:00', endTime: '21:00', duration: 120, cost: 50, timeOfDay: 'evening', rating: 4.3, tags: ['dinner', 'local'] },
+        { ...morningAct, name: `${dest} ${morningAct.name}`, description: `Explore ${dest}`, location: 'City Centre', address: `City Centre, ${dest}`, lat: baseLat, lng: baseLng },
+        { ...eveningAct, name: eveningAct.name, description: 'Local experience', location: 'Old Town', address: `Old Town, ${dest}`, lat: baseLat - 0.001, lng: baseLng + 0.001 },
       ],
-    }],
+    };
+  });
+
+  return {
+    title: `${dest} ${totalDays}-Day Adventure`,
+    description: `A wonderful ${totalDays}-day trip to ${dest} tailored to your ${params.style} travel style.`,
+    days,
     suggestedStays: [{ name: `${dest} Central Hotel`, type: 'hotel', address: `Central District, ${dest}`, lat: 48.8566, lng: 2.3522, cost: 150, notes: 'Great location' }],
     suggestedTransport: [],
   };
