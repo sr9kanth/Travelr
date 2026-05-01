@@ -18,11 +18,11 @@ export default async function TripLayout({
   if (!trip) notFound();
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       <Sidebar />
-      <div className="ml-[260px] flex-1 flex flex-col min-h-screen">
+      <div style={{ marginLeft: 'var(--sidebar-width)', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <TripNav tripId={trip.id} tripName={trip.name} />
-        <div className="flex-1">{children}</div>
+        <div style={{ flex: 1 }}>{children}</div>
       </div>
     </div>
   );

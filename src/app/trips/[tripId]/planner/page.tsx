@@ -192,18 +192,19 @@ export default function PlannerPage() {
   if (!trip) return <div className="p-8 text-slate-500">Trip not found.</div>;
 
   return (
-    <div className="flex h-full">
+    <div style={{ display: 'flex', height: '100%' }}>
       {/* Main Planner */}
-      <div className={`flex-1 overflow-auto p-6 transition-all ${aiDayId ? 'pr-3' : ''}`}>
-        <div className="flex items-center justify-between mb-6">
+      <div style={{ flex: 1, overflow: 'auto', padding: 'var(--pad)', transition: 'padding 200ms' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Day-by-Day Planner</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Drag activities to reorder or move between days</p>
+            <h2 style={{ fontFamily: 'Fraunces, serif', fontWeight: 350, fontSize: 32, letterSpacing: '-0.02em', color: 'var(--ink)', margin: 0 }}>
+              Day-by-Day Planner
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--mute)', marginTop: 4 }}>Drag activities to reorder or move between days</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-sm"
               onClick={() => {
                 const allDayIds = trip.days.map((d) => d.id);
                 if (collapsedDays.size === allDayIds.length) setCollapsedDays(new Set());
@@ -211,7 +212,7 @@ export default function PlannerPage() {
               }}
             >
               {collapsedDays.size > 0 ? 'Expand All' : 'Collapse All'}
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -228,80 +229,79 @@ export default function PlannerPage() {
               ).sort(([a], [b]) => (byTimeOfDay[a] || 0) - (byTimeOfDay[b] || 0));
 
               return (
-                <div key={day.id} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+                <div key={day.id} style={{ background: 'var(--card-bg)', border: 'var(--card-border)', borderRadius: 'var(--card-radius)', overflow: 'hidden', marginBottom: 'var(--gap)' }}>
                   {/* Day header */}
                   <div
-                    className="flex items-center gap-4 px-5 py-3.5 cursor-pointer hover:bg-slate-50 transition-colors"
+                    style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', cursor: 'pointer', borderBottom: collapsed ? 'none' : '1px solid var(--hairline)' }}
                     onClick={() => toggleDay(day.id)}
                   >
-                    <div className="w-10 h-10 bg-brand-500 rounded-xl flex flex-col items-center justify-center text-white shrink-0">
-                      <span className="text-xs font-medium leading-none">Day</span>
-                      <span className="text-lg font-bold leading-none">{i + 1}</span>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontWeight: 300, fontSize: 48, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--ink)', flexShrink: 0, minWidth: 52 }}>
+                      {String(i + 1).padStart(2, '0')}
                     </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-slate-900">{formatDate(day.date, 'EEEE, MMMM d')}</p>
-                      <p className="text-xs text-slate-400">{day.activities.length} activities</p>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace', letterSpacing: '0.02em' }}>{formatDate(day.date, 'EEE, MMM d')}</div>
+                      <div style={{ fontSize: 13, color: 'var(--mute)', marginTop: 2 }}>{day.activities.length} activit{day.activities.length !== 1 ? 'ies' : 'y'}</div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       {!collapsed && (
                         <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                          <button
+                            className="btn btn-sm btn-ghost"
                             onClick={(e) => { e.stopPropagation(); setAiDayId(aiDayId === day.id ? null : day.id); }}
                             title="Explore nearby"
                           >
-                            <Sparkles className={`w-4 h-4 ${aiDayId === day.id ? 'text-brand-500' : 'text-slate-400'}`} />
-                          </Button>
+                            <Sparkles size={13} style={{ color: aiDayId === day.id ? 'var(--accent)' : 'var(--mute)' }} />
+                          </button>
                           {day.activities.length > 1 && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
+                            <button
+                              className="btn btn-sm btn-ghost"
                               onClick={async (e) => { e.stopPropagation(); await handleOptimize(day.id, day.activities); }}
                               disabled={optimizing === day.id}
                               title="AI Optimize order"
                             >
                               {optimizing === day.id
-                                ? <Loader2 className="w-4 h-4 animate-spin text-brand-400" />
-                                : <Zap className="w-4 h-4 text-slate-400" />}
-                            </Button>
+                                ? <Loader2 size={13} className="animate-spin" style={{ color: 'var(--mute)' }} />
+                                : <Zap size={13} style={{ color: 'var(--mute)' }} />}
+                            </button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                          <button
+                            className="btn btn-sm btn-ghost"
                             onClick={(e) => { e.stopPropagation(); setAddModal({ open: true, dayId: day.id }); }}
                             title="Add activity"
                           >
-                            <Plus className="w-4 h-4 text-slate-400" />
-                          </Button>
+                            <Plus size={13} style={{ color: 'var(--mute)' }} />
+                          </button>
                         </>
                       )}
-                      {collapsed ? <ChevronRight className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                      {collapsed
+                        ? <ChevronRight size={14} style={{ color: 'var(--mute)' }} />
+                        : <ChevronDown size={14} style={{ color: 'var(--mute)' }} />}
                     </div>
                   </div>
 
                   {!collapsed && (
-                    <div className="px-4 pb-4">
+                    <div style={{ padding: '16px 20px 20px' }}>
                       {day.activities.length === 0 ? (
                         <div
-                          className="flex flex-col items-center justify-center py-8 rounded-xl border-2 border-dashed border-slate-200 cursor-pointer hover:border-brand-300 hover:bg-brand-50/30 transition-all"
+                          className="new-trip-card"
+                          style={{ minHeight: 100, borderRadius: 14, cursor: 'pointer' }}
                           onClick={() => setAddModal({ open: true, dayId: day.id })}
                         >
-                          <Plus className="w-6 h-6 text-slate-300 mb-2" />
-                          <p className="text-sm text-slate-400">Add first activity</p>
+                          <Plus size={18} style={{ color: 'var(--mute)' }} />
+                          <span style={{ fontSize: 13, color: 'var(--mute)' }}>Add first activity</span>
                         </div>
                       ) : (
-                        <div className="space-y-3">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                           {grouped.map(([timeOfDay, activities]) => (
                             <div key={timeOfDay}>
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                   {TIME_OF_DAY_LABELS[timeOfDay as TimeOfDay] || timeOfDay}
                                 </span>
-                                <div className="flex-1 h-px bg-slate-100" />
+                                <div style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
                               </div>
                               <SortableContext items={activities.map((a) => a.id)} strategy={verticalListSortingStrategy}>
-                                <div className="space-y-2 pl-2">
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                   {activities.map((activity) => (
                                     <ActivityCard
                                       key={activity.id}
@@ -314,15 +314,14 @@ export default function PlannerPage() {
                               </SortableContext>
                             </div>
                           ))}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full text-slate-400 hover:text-brand-500 border border-dashed border-slate-200 hover:border-brand-300"
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            style={{ width: '100%', border: '1px dashed var(--hairline)', borderRadius: 10, color: 'var(--mute)' }}
                             onClick={() => setAddModal({ open: true, dayId: day.id })}
                           >
-                            <Plus className="w-3.5 h-3.5" />
+                            <Plus size={12} />
                             Add activity
-                          </Button>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -336,7 +335,7 @@ export default function PlannerPage() {
 
       {/* AI Panel */}
       {aiDayId && (
-        <div className="w-80 shrink-0 border-l border-slate-100 bg-white overflow-hidden flex flex-col">
+        <div style={{ width: 320, flexShrink: 0, borderLeft: '1px solid var(--hairline)', background: 'var(--card-bg)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <AIPanel
             activity={trip.days.find((d) => d.id === aiDayId)?.activities[0]}
             dayId={aiDayId}

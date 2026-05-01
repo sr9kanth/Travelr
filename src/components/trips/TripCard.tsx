@@ -1,25 +1,58 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Calendar, MapPin, DollarSign, Loader2, Trash2, ArrowUpRight } from 'lucide-react';
-import { formatDate, tripDuration, formatCurrency, getTripCoverImage } from '@/lib/utils';
+import { Loader2, Trash2 } from 'lucide-react';
+import { formatDate, tripDuration } from '@/lib/utils';
 import type { Trip } from '@/types';
 import { useState } from 'react';
 
-const STATUS = {
-  planning:  { label: 'Planning',  dot: 'bg-amber-400',  text: 'text-amber-700',  bg: 'bg-amber-50/90' },
-  active:    { label: 'Active',    dot: 'bg-emerald-400 dot-pulse', text: 'text-emerald-700', bg: 'bg-emerald-50/90' },
-  completed: { label: 'Completed', dot: 'bg-slate-400',  text: 'text-slate-600',  bg: 'bg-slate-100/90' },
+const STATUS_LABEL: Record<string, string> = {
+  active: 'On now',
+  planning: 'Planning',
+  completed: 'Past trip',
 };
+
+function getTripKey(trip: Trip): string {
+  return `${trip.name} ${trip.description ?? ''}`.toLowerCase();
+}
+
+function getHue(trip: Trip): number {
+  const key = getTripKey(trip);
+  if (key.includes('japan') || key.includes('kyoto') || key.includes('tokyo')) return 0;
+  if (key.includes('portugal') || key.includes('lisbon')) return 35;
+  if (key.includes('spain') || key.includes('barcelona')) return 38;
+  if (key.includes('italy')) return 45;
+  if (key.includes('france') || key.includes('paris')) return 50;
+  if (key.includes('greece')) return 210;
+  if (key.includes('iceland')) return 200;
+  if (key.includes('morocco')) return 30;
+  if (key.includes('thailand')) return 150;
+  return (trip.name.charCodeAt(0) * 47) % 360;
+}
+
+function getFlagEmoji(trip: Trip): string {
+  const key = getTripKey(trip);
+  if (key.includes('japan') || key.includes('tokyo') || key.includes('kyoto')) return '🇯🇵';
+  if (key.includes('portugal') || key.includes('lisbon')) return '🇵🇹';
+  if (key.includes('spain') || key.includes('barcelona') || key.includes('madrid')) return '🇪🇸';
+  if (key.includes('france') || key.includes('paris')) return '🇫🇷';
+  if (key.includes('italy') || key.includes('rome')) return '🇮🇹';
+  if (key.includes('greece') || key.includes('athens')) return '🇬🇷';
+  if (key.includes('iceland')) return '🇮🇸';
+  if (key.includes('morocco')) return '🇲🇦';
+  if (key.includes('thailand')) return '🇹🇭';
+  return '✈️';
+}
 
 interface TripCardProps { trip: Trip; onDelete?: (id: string) => void; }
 
 export default function TripCard({ trip, onDelete }: TripCardProps) {
   const [deleting, setDeleting] = useState(false);
-  const status = STATUS[trip.status] ?? STATUS.planning;
   const totalActivities = trip.days.reduce((sum, d) => sum + d.activities.length, 0);
-  const cover = getTripCoverImage(trip);
   const duration = tripDuration(trip.startDate, trip.endDate);
+  const hue = getHue(trip);
+  const flag = getFlagEmoji(trip);
+  const statusLabel = STATUS_LABEL[trip.status] ?? 'Planning';
+  const density = trip.days.slice(0, 7).map((d) => Math.min(10, d.activities.length));
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -32,79 +65,76 @@ export default function TripCard({ trip, onDelete }: TripCardProps) {
   };
 
   return (
-    <Link href={`/trips/${trip.id}`}
-      className="trip-card group block bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl hover:border-brand-100">
+    <Link
+      href={`/trips/${trip.id}`}
+      className="trip-card"
+      style={{ ['--card-h' as string]: hue }}
+    >
+      {/* Cover */}
+      <div className="trip-cover">
+        <div className="trip-cover-grad" />
 
-      {/* Cover image */}
-      <div className="relative h-48 overflow-hidden bg-slate-100">
-        <Image src={cover} alt={trip.name} fill className="object-cover group-hover:scale-110 transition-transform duration-700" unoptimized />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        <div className="trip-status-pill">
+          <span className="trip-status-dot" data-status={trip.status} />
+          {statusLabel}
+        </div>
 
-        {/* Top row */}
-        <div className="absolute top-3 left-3 right-3 flex items-start justify-between">
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${status.bg} ${status.text}`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
-            {status.label}
-          </div>
+        <div className="trip-meta-row">
+          <span className="trip-meta-date">
+            {formatDate(trip.startDate, 'MMM d')} – {formatDate(trip.endDate, 'MMM d')}
+          </span>
           {onDelete && (
-            <button onClick={handleDelete} disabled={deleting}
-              className="p-1.5 rounded-xl bg-black/30 hover:bg-red-500 opacity-0 group-hover:opacity-100 transition-all text-white backdrop-blur-sm">
-              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              style={{
+                padding: '4px 8px', borderRadius: 8,
+                background: 'rgba(0,0,0,0.35)', border: 'none', color: 'white',
+                cursor: 'pointer', display: 'flex', alignItems: 'center',
+              }}
+            >
+              {deleting
+                ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
+                : <Trash2 style={{ width: 12, height: 12 }} />}
             </button>
           )}
         </div>
-
-        {/* Duration badge */}
-        <div className="absolute bottom-3 left-3">
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-sm text-white text-xs font-semibold">
-            <Calendar className="w-3 h-3" />
-            {duration} days
-          </div>
-        </div>
-
-        {/* Arrow */}
-        <div className="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all translate-y-1 group-hover:translate-y-0">
-          <ArrowUpRight className="w-4 h-4 text-white" />
-        </div>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
-        <h3 className="font-bold text-slate-900 text-sm leading-tight mb-1 group-hover:text-brand-600 transition-colors line-clamp-1">
-          {trip.name}
-        </h3>
-        {trip.description && (
-          <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed mb-3">{trip.description}</p>
-        )}
-
-        <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-3">
-          <MapPin className="w-3 h-3 shrink-0" />
-          {formatDate(trip.startDate, 'MMM d')} – {formatDate(trip.endDate, 'MMM d, yyyy')}
+      {/* Body */}
+      <div className="trip-body">
+        <div>
+          <div className="trip-destination">
+            <span className="trip-flag">{flag}</span>
+            <h3 className="trip-name">{trip.name}</h3>
+          </div>
+          {trip.description && (
+            <div className="trip-place">{trip.description}</div>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 pt-3 border-t border-slate-50">
-          <span className="flex items-center gap-1 text-xs font-medium text-slate-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-400 inline-block" />
-            {totalActivities} activities
-          </span>
+        <div className="trip-stats">
+          <div className="trip-stat">
+            <span>Days</span>
+            <span className="trip-stat-val">{duration}</span>
+          </div>
+          <div className="trip-stat">
+            <span>Activities</span>
+            <span className="trip-stat-val">{totalActivities}</span>
+          </div>
           {trip.budget && (
-            <>
-              <div className="w-px h-3 bg-slate-200" />
-              <span className="flex items-center gap-1 text-xs text-slate-500">
-                <DollarSign className="w-3 h-3" />
-                {formatCurrency(trip.budget, trip.currency)}
-              </span>
-            </>
+            <div className="trip-stat">
+              <span>Budget</span>
+              <span className="trip-stat-val">${(trip.budget / 1000).toFixed(1)}k</span>
+            </div>
           )}
-          <div className="ml-auto flex gap-1">
-            {trip.days.slice(0, 5).map((d, i) => (
-              <div key={i}
-                className="w-1.5 h-4 rounded-full"
-                style={{
-                  backgroundColor: d.activities.length > 0 ? '#6366f1' : '#e2e8f0',
-                  opacity: d.activities.length > 0 ? 0.6 + (d.activities.length / 10) : 1,
-                }} />
-            ))}
+          <div className="trip-stat" style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
+            <span>Density</span>
+            <div className="trip-density">
+              {(density.length > 0 ? density : [3, 5, 7, 4, 6]).map((d, i) => (
+                <div key={i} className="trip-density-bar" style={{ height: `${Math.max(4, d * 1.5)}px` }} />
+              ))}
+            </div>
           </div>
         </div>
       </div>

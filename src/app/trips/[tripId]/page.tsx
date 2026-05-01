@@ -1,9 +1,8 @@
 import { prisma } from '@/lib/db';
 import { notFound } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
-import { Calendar, MapPin, DollarSign, Activity, BedDouble, Train, Sparkles, ArrowRight } from 'lucide-react';
-import { formatDate, tripDuration, formatCurrency, getTripCoverImage, ACTIVITY_ICONS, ACTIVITY_COLORS } from '@/lib/utils';
+import { Calendar, MapPin, BedDouble, Train, Sparkles, ArrowRight } from 'lucide-react';
+import { formatDate, tripDuration, formatCurrency, ACTIVITY_ICONS, ACTIVITY_COLORS } from '@/lib/utils';
 import dynamic from 'next/dynamic';
 import type { MapMarkerData } from '@/types';
 
@@ -22,202 +21,199 @@ export default async function TripOverviewPage({ params }: { params: { tripId: s
   if (!trip) notFound();
 
   const totalActivities = trip.days.reduce((sum, d) => sum + d.activities.length, 0);
-  const totalCost = trip.days
-    .flatMap((d) => d.activities)
-    .reduce((sum, a) => sum + (a.cost || 0), 0);
+  const totalCost = trip.days.flatMap((d) => d.activities).reduce((sum, a) => sum + (a.cost || 0), 0);
+  const duration = tripDuration(trip.startDate.toISOString(), trip.endDate.toISOString());
 
-  // Build map markers
   const markers: MapMarkerData[] = [
     ...trip.days.flatMap((day, di) =>
-      day.activities
-        .filter((a) => a.lat && a.lng)
-        .map((a) => ({
-          id: a.id,
-          name: a.name,
-          type: 'activity' as const,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          activityType: a.type as any,
-          lat: a.lat!,
-          lng: a.lng!,
-          day: di + 1,
-        }))
+      day.activities.filter((a) => a.lat && a.lng).map((a) => ({
+        id: a.id, name: a.name, type: 'activity' as const,
+        activityType: a.type as never,
+        lat: a.lat!, lng: a.lng!, day: di + 1,
+      }))
     ),
-    ...trip.stays
-      .filter((s) => s.lat && s.lng)
-      .map((s) => ({ id: s.id, name: s.name, type: 'stay' as const, lat: s.lat!, lng: s.lng! })),
+    ...trip.stays.filter((s) => s.lat && s.lng).map((s) => ({
+      id: s.id, name: s.name, type: 'stay' as const, lat: s.lat!, lng: s.lng!,
+    })),
   ];
 
-  // Activity type summary
   const typeCounts = trip.days.flatMap((d) => d.activities).reduce((acc, a) => {
     acc[a.type] = (acc[a.type] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  const cover = getTripCoverImage({ coverImage: trip.coverImage, name: trip.name });
-
   return (
-    <div className="flex-1 overflow-auto">
-      {/* Hero */}
-      <div className="relative h-64 overflow-hidden bg-slate-800">
-        <Image src={cover} alt={trip.name} fill className="object-cover opacity-60" unoptimized />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 p-8">
-          <h1 className="text-3xl font-bold text-white mb-2">{trip.name}</h1>
-          {trip.description && <p className="text-slate-300 max-w-2xl">{trip.description}</p>}
+    <div style={{ flex: 1, overflow: 'auto', padding: 'var(--pad)' }}>
+
+      {/* Overview cover */}
+      <div className="overview-cover">
+        <div className="overview-cover-photo" />
+        <div className="overview-cover-content">
+          <div className="overview-where">✈️ {trip.name}</div>
+          <h1 className="overview-title">{trip.name}</h1>
         </div>
       </div>
 
-      <div className="p-8">
-        {/* Stats */}
-        <div className="grid grid-cols-5 gap-4 mb-8">
-          {[
-            { icon: Calendar, label: 'Duration', value: `${tripDuration(trip.startDate.toISOString(), trip.endDate.toISOString())} days`, color: 'brand' },
-            { icon: MapPin, label: 'Dates', value: `${formatDate(trip.startDate, 'MMM d')} – ${formatDate(trip.endDate, 'MMM d, yyyy')}`, color: 'violet' },
-            { icon: Activity, label: 'Activities', value: totalActivities.toString(), color: 'emerald' },
-            { icon: BedDouble, label: 'Stays', value: trip.stays.length.toString(), color: 'orange' },
-            { icon: DollarSign, label: 'Activity Cost', value: formatCurrency(totalCost, trip.currency), color: 'sky' },
-          ].map(({ icon: Icon, label, value, color }) => (
-            <div key={label} className="bg-white rounded-2xl border border-slate-100 p-4">
-              <div className={`w-9 h-9 bg-${color}-50 rounded-xl flex items-center justify-center mb-3`}>
-                <Icon className={`w-4 h-4 text-${color}-500`} />
+      {/* Stats grid */}
+      <div className="overview-stats">
+        <div className="overview-stat">
+          <div className="overview-stat-label">Duration</div>
+          <div className="overview-stat-value">{duration}</div>
+          <div className="overview-stat-sub">{formatDate(trip.startDate, 'MMM d')} – {formatDate(trip.endDate, 'MMM d')}</div>
+        </div>
+        <div className="overview-stat">
+          <div className="overview-stat-label">Activities</div>
+          <div className="overview-stat-value">{totalActivities}</div>
+          <div className="overview-stat-sub">Across {trip.days.length} days</div>
+        </div>
+        <div className="overview-stat">
+          <div className="overview-stat-label">Est. cost</div>
+          <div className="overview-stat-value">{totalCost > 0 ? formatCurrency(totalCost, trip.currency) : '—'}</div>
+          <div className="overview-stat-sub">{trip.budget ? `Budget: ${formatCurrency(trip.budget, trip.currency)}` : 'No budget set'}</div>
+        </div>
+        <div className="overview-stat">
+          <div className="overview-stat-label">Stays</div>
+          <div className="overview-stat-value">{trip.stays.length}</div>
+          <div className="overview-stat-sub">{trip.transports.length} transport leg{trip.transports.length !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 'var(--gap-lg)', alignItems: 'start', marginBottom: 'var(--gap-lg)' }}>
+        {/* Map */}
+        <div className="card" style={{ overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--hairline)' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 400, letterSpacing: '-0.01em', color: 'var(--ink)' }}>Trip map</div>
+            <Link href={`/trips/${trip.id}/map`} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}>
+              Full map <ArrowRight size={12} />
+            </Link>
+          </div>
+          {markers.length > 0 ? (
+            <MapView markers={markers} className="h-[360px]" />
+          ) : (
+            <div style={{ height: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mute)', flexDirection: 'column', gap: 8 }}>
+              <MapPin size={24} style={{ opacity: 0.3 }} />
+              <p style={{ fontSize: 13 }}>Add activities with coordinates to see them here</p>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
+          {/* Activity breakdown */}
+          {Object.keys(typeCounts).length > 0 && (
+            <div className="card" style={{ padding: 20 }}>
+              <div style={{ fontSize: 11, color: 'var(--mute)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>Activity breakdown</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {Object.entries(typeCounts).sort(([, a], [, b]) => b - a).slice(0, 6).map(([type, count]) => {
+                  const color = ACTIVITY_COLORS[type as keyof typeof ACTIVITY_COLORS] || '#6366f1';
+                  const icon = ACTIVITY_ICONS[type as keyof typeof ACTIVITY_ICONS] || '📍';
+                  return (
+                    <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>{icon}</span>
+                      <span style={{ fontSize: 13, color: 'var(--ink-2)', flex: 1, textTransform: 'capitalize' }}>{type}</span>
+                      <div style={{ width: 56, height: 4, background: 'var(--surface-2)', borderRadius: 999, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', borderRadius: 999, backgroundColor: color, width: `${(count / totalActivities) * 100}%` }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--mute)', fontFamily: 'Geist Mono, monospace', minWidth: 16, textAlign: 'right' }}>{count}</span>
+                    </div>
+                  );
+                })}
               </div>
-              <p className="text-xs text-slate-500 mb-0.5">{label}</p>
-              <p className="font-bold text-slate-900 text-sm">{value}</p>
+            </div>
+          )}
+
+          {/* Quick links */}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ fontSize: 11, color: 'var(--mute)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>Quick access</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {[
+                { href: `/trips/${trip.id}/planner`,  icon: Calendar,  label: 'Day Planner',  desc: `${trip.days.length} days` },
+                { href: `/trips/${trip.id}/map`,       icon: MapPin,    label: 'Map',          desc: `${markers.length} markers` },
+                { href: `/trips/${trip.id}/stays`,     icon: BedDouble, label: 'Stays',        desc: `${trip.stays.length} booked` },
+                { href: `/trips/${trip.id}/transport`, icon: Train,     label: 'Transport',    desc: `${trip.transports.length} legs` },
+              ].map(({ href, icon: Icon, label, desc }) => (
+                <Link key={href} href={href} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                  borderRadius: 10, textDecoration: 'none', color: 'var(--ink)', transition: 'background 120ms',
+                }}>
+                  <Icon size={14} style={{ color: 'var(--mute)', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--mute)' }}>{desc}</div>
+                  </div>
+                  <ArrowRight size={12} style={{ color: 'var(--mute-2)' }} />
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* AI CTA */}
+          <div style={{ background: 'var(--ink)', borderRadius: 'var(--card-radius)', padding: 20, color: 'var(--bg)' }}>
+            <Sparkles size={18} style={{ color: 'var(--accent)', marginBottom: 10 }} />
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 400, marginBottom: 6 }}>AI Suggestions</div>
+            <p style={{ fontSize: 13, opacity: 0.7, marginBottom: 14, lineHeight: 1.5 }}>
+              Let AI suggest nearby activities for any day in your planner.
+            </p>
+            <Link href={`/trips/${trip.id}/planner`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: 'var(--bg)', textDecoration: 'none' }}>
+              Open Planner <ArrowRight size={13} />
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Day timeline */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--gap)' }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 28, fontWeight: 350, letterSpacing: '-0.02em', color: 'var(--ink)' }}>
+            The shape of the trip
+          </div>
+          <Link href={`/trips/${trip.id}/planner`}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}>
+            Edit in Planner <ArrowRight size={12} />
+          </Link>
+        </div>
+        <div className="trips-grid">
+          {trip.days.map((day, i) => (
+            <div key={day.id} className="card" style={{ padding: 'var(--pad-card)' }}>
+              <div className="day-num" style={{ fontSize: 48 }}>{String(i + 1).padStart(2, '0')}</div>
+              <div className="day-date" style={{ marginTop: 8 }}>{formatDate(day.date, 'EEE, MMM d')}</div>
+              <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {day.activities.length === 0 ? (
+                  <span style={{ fontSize: 12, color: 'var(--mute)', fontStyle: 'italic' }}>No activities yet</span>
+                ) : (
+                  <>
+                    {day.activities.slice(0, 3).map((a) => {
+                      const color = ACTIVITY_COLORS[a.type as keyof typeof ACTIVITY_COLORS] || '#6366f1';
+                      const icon = ACTIVITY_ICONS[a.type as keyof typeof ACTIVITY_ICONS] || '📍';
+                      return (
+                        <span key={a.id} style={{
+                          padding: '3px 8px', borderRadius: 999, fontSize: 11,
+                          background: `${color}15`, color,
+                        }}>
+                          {icon} {a.name}
+                        </span>
+                      );
+                    })}
+                    {day.activities.length > 3 && (
+                      <span style={{ padding: '3px 8px', background: 'var(--surface-2)', color: 'var(--mute)', borderRadius: 999, fontSize: 11 }}>
+                        +{day.activities.length - 3}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="trip-stats" style={{ marginTop: 16 }}>
+                <div className="trip-stat">
+                  <span>Activities</span>
+                  <span className="trip-stat-val">{day.activities.length}</span>
+                </div>
+              </div>
             </div>
           ))}
         </div>
-
-        <div className="grid grid-cols-3 gap-6">
-          {/* Map */}
-          <div className="col-span-2 bg-white rounded-2xl border border-slate-100 overflow-hidden" style={{ height: 420 }}>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-900">Trip Map</h2>
-              <Link href={`/trips/${trip.id}/map`} className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-                Full map <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-            {markers.length > 0 ? (
-              <MapView markers={markers} className="h-[360px]" />
-            ) : (
-              <div className="h-[360px] flex items-center justify-center text-slate-400 text-sm">
-                <div className="text-center">
-                  <MapPin className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p>Add activities with coordinates to see them on the map</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar info */}
-          <div className="space-y-4">
-            {/* Activity breakdown */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-5">
-              <h2 className="font-semibold text-slate-900 mb-4">Activity Breakdown</h2>
-              <div className="space-y-2">
-                {Object.entries(typeCounts)
-                  .sort(([, a], [, b]) => b - a)
-                  .slice(0, 6)
-                  .map(([type, count]) => {
-                    const color = ACTIVITY_COLORS[type as keyof typeof ACTIVITY_COLORS] || '#6366f1';
-                    const icon = ACTIVITY_ICONS[type as keyof typeof ACTIVITY_ICONS] || '📍';
-                    return (
-                      <div key={type} className="flex items-center gap-2">
-                        <span className="text-sm">{icon}</span>
-                        <span className="text-sm text-slate-600 capitalize flex-1">{type}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${(count / totalActivities) * 100}%`, backgroundColor: color }} />
-                          </div>
-                          <span className="text-xs text-slate-400 w-4 text-right">{count}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* Quick links */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-5">
-              <h2 className="font-semibold text-slate-900 mb-3">Quick Access</h2>
-              <div className="space-y-1">
-                {[
-                  { href: `/trips/${trip.id}/planner`, icon: Calendar, label: 'Day Planner', desc: `${trip.days.length} days` },
-                  { href: `/trips/${trip.id}/map`, icon: MapPin, label: 'Interactive Map', desc: `${markers.length} markers` },
-                  { href: `/trips/${trip.id}/stays`, icon: BedDouble, label: 'Stays', desc: `${trip.stays.length} booked` },
-                  { href: `/trips/${trip.id}/transport`, icon: Train, label: 'Transport', desc: `${trip.transports.length} legs` },
-                ].map(({ href, icon: Icon, label, desc }) => (
-                  <Link key={href} href={href} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors group">
-                    <Icon className="w-4 h-4 text-slate-400" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800">{label}</p>
-                      <p className="text-xs text-slate-400">{desc}</p>
-                    </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-brand-400 transition-colors" />
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            {/* AI Suggest */}
-            <div className="bg-gradient-to-br from-brand-500 to-violet-600 rounded-2xl p-5 text-white">
-              <Sparkles className="w-6 h-6 mb-3 text-brand-200" />
-              <h3 className="font-semibold mb-1">AI Suggestions</h3>
-              <p className="text-sm text-brand-100 mb-4">Let AI suggest nearby activities for any day in your trip.</p>
-              <Link href={`/trips/${trip.id}/planner`}
-                className="flex items-center gap-2 text-sm font-semibold hover:gap-3 transition-all">
-                Open Planner <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Day-by-day summary */}
-        <div className="mt-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-slate-900">Trip Timeline</h2>
-            <Link href={`/trips/${trip.id}/planner`} className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-              Edit in Planner <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 gap-3">
-            {trip.days.map((day, i) => (
-              <div key={day.id} className="bg-white rounded-xl border border-slate-100 p-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 text-center shrink-0">
-                    <p className="text-xs text-slate-400">Day</p>
-                    <p className="text-xl font-bold text-brand-500">{i + 1}</p>
-                    <p className="text-xs text-slate-500">{formatDate(day.date.toISOString(), 'MMM d')}</p>
-                  </div>
-                  <div className="flex-1">
-                    {day.activities.length === 0 ? (
-                      <p className="text-sm text-slate-400 italic">No activities planned</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {day.activities.slice(0, 5).map((a) => {
-                          const color = ACTIVITY_COLORS[a.type as keyof typeof ACTIVITY_COLORS] || '#6366f1';
-                          const icon = ACTIVITY_ICONS[a.type as keyof typeof ACTIVITY_ICONS] || '📍';
-                          return (
-                            <span key={a.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `${color}15`, color }}>
-                              {icon} {a.name}
-                            </span>
-                          );
-                        })}
-                        {day.activities.length > 5 && (
-                          <span className="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-full text-xs">+{day.activities.length - 5} more</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-medium text-slate-700">{day.activities.length}</p>
-                    <p className="text-xs text-slate-400">activities</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
+
     </div>
   );
 }

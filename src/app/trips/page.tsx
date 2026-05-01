@@ -1,22 +1,30 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Filter, Loader2, Globe } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 import Sidebar from '@/components/layout/Sidebar';
 import TripCard from '@/components/trips/TripCard';
-import Button from '@/components/ui/Button';
 import type { Trip } from '@/types';
+
+const FILTERS = [
+  { key: 'all',       label: 'All trips' },
+  { key: 'active',    label: 'On now' },
+  { key: 'planning',  label: 'Planning' },
+  { key: 'completed', label: 'Past' },
+] as const;
+
+type Filter = 'all' | 'planning' | 'active' | 'completed';
 
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'planning' | 'active' | 'completed'>('all');
+  const [filter, setFilter] = useState<Filter>('all');
 
   useEffect(() => {
     fetch('/api/trips')
       .then((r) => r.json())
-      .then((data) => { setTrips(Array.isArray(data) ? data : []); })
+      .then((data) => setTrips(Array.isArray(data) ? data : []))
       .catch(() => setTrips([]))
       .finally(() => setLoading(false));
   }, []);
@@ -27,77 +35,80 @@ export default function TripsPage() {
     return matchSearch && matchFilter;
   });
 
+  const counts: Record<string, number> = {
+    all: trips.length,
+    active: trips.filter((t) => t.status === 'active').length,
+    planning: trips.filter((t) => t.status === 'planning').length,
+    completed: trips.filter((t) => t.status === 'completed').length,
+  };
+
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       <Sidebar />
-      <main className="ml-[260px] flex-1 p-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+      <main style={{ marginLeft: 'var(--sidebar-width)', flex: 1, padding: 'var(--pad)', overflow: 'hidden' }}>
+
+        {/* Topbar */}
+        <div className="topbar">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">My Trips</h1>
-            <p className="text-slate-500 mt-0.5">{trips.length} trip{trips.length !== 1 ? 's' : ''} planned</p>
+            <h1 className="topbar-title">Your trips</h1>
+            {trips.length > 0 && (
+              <div className="topbar-sub">{trips.length} trip{trips.length !== 1 ? 's' : ''} planned</div>
+            )}
           </div>
-          <Link href="/trips/new">
-            <Button size="md">
-              <Plus className="w-4 h-4" />
-              New Trip
-            </Button>
-          </Link>
+          <div className="topbar-right">
+            <div className="search">
+              <Search size={14} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search trips, places…"
+              />
+            </div>
+            <Link href="/trips/new" className="btn btn-primary">
+              + New trip
+            </Link>
+          </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search trips…"
-              className="w-full pl-9 pr-4 h-10 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all"
-            />
-          </div>
-          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1">
-            {(['all', 'planning', 'active', 'completed'] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-all ${
-                  filter === f ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+        {/* Filter pills */}
+        <div className="filter-row">
+          {FILTERS.map(({ key, label }) => (
+            <button
+              key={key}
+              className="filter-pill"
+              data-active={filter === key}
+              onClick={() => setFilter(key as Filter)}
+            >
+              {label}
+              {counts[key] > 0 && (
+                <span className="mono muted" style={{ marginLeft: 6, fontSize: 11 }}>{counts[key]}</span>
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Grid */}
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <Loader2 size={28} style={{ color: 'var(--accent)', animation: 'spin 1s linear infinite' }} />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-20 h-20 bg-slate-100 rounded-2xl flex items-center justify-center mb-5">
-              <Globe className="w-10 h-10 text-slate-300" />
+          <div className="empty">
+            <div className="empty-mark">🗺️</div>
+            <div className="empty-title">{search ? 'No matches' : 'No trips yet'}</div>
+            <div className="empty-sub">
+              {search
+                ? 'Try a different search term.'
+                : 'Describe somewhere you\'re curious about. We\'ll sketch a week of it.'}
             </div>
-            <h3 className="text-lg font-semibold text-slate-700 mb-2">
-              {search ? 'No trips match your search' : 'No trips yet'}
-            </h3>
-            <p className="text-slate-500 mb-6 max-w-sm">
-              {search ? 'Try a different search term.' : 'Create your first trip and let AI plan it for you.'}
-            </p>
             {!search && (
-              <Link href="/trips/new">
-                <Button>
-                  <Plus className="w-4 h-4" />
-                  Create Your First Trip
-                </Button>
+              <Link href="/trips/new" className="btn btn-primary" style={{ marginTop: 8 }}>
+                ✨ Plan one with AI
               </Link>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="trips-grid">
             {filtered.map((trip) => (
               <TripCard
                 key={trip.id}
@@ -105,8 +116,22 @@ export default function TripsPage() {
                 onDelete={(id) => setTrips((prev) => prev.filter((t) => t.id !== id))}
               />
             ))}
+            <Link href="/trips/new" className="new-trip-card">
+              <div style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: 'var(--accent-soft)', color: 'var(--accent-ink)',
+                display: 'grid', placeItems: 'center', marginBottom: 8, fontSize: 18,
+              }}>+</div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, letterSpacing: '-0.01em', color: 'var(--ink)' }}>
+                Plan something new
+              </div>
+              <div className="muted" style={{ fontSize: 13, maxWidth: 240 }}>
+                Describe a trip, or pick a country and we'll build the rest.
+              </div>
+            </Link>
           </div>
         )}
+
       </main>
     </div>
   );
