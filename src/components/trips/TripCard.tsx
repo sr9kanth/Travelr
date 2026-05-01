@@ -1,24 +1,58 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Calendar, MapPin, DollarSign, Loader2, Trash2 } from 'lucide-react';
-import { formatDate, tripDuration, formatCurrency, getTripCoverImage } from '@/lib/utils';
+import { Loader2, Trash2 } from 'lucide-react';
+import { formatDate, tripDuration } from '@/lib/utils';
 import type { Trip } from '@/types';
 import { useState } from 'react';
 
-const STATUS_STYLES = {
-  planning:  { bg: 'bg-amber-50',  text: 'text-amber-600',  dot: 'bg-amber-400',  label: 'Planning' },
-  active:    { bg: 'bg-green-50',  text: 'text-green-600',  dot: 'bg-green-400',  label: 'Active' },
-  completed: { bg: 'bg-slate-50',  text: 'text-slate-500',  dot: 'bg-slate-400',  label: 'Completed' },
+const STATUS_LABEL: Record<string, string> = {
+  active: 'On now',
+  planning: 'Planning',
+  completed: 'Past trip',
 };
+
+function getTripKey(trip: Trip): string {
+  return `${trip.name} ${trip.description ?? ''}`.toLowerCase();
+}
+
+function getHue(trip: Trip): number {
+  const key = getTripKey(trip);
+  if (key.includes('japan') || key.includes('kyoto') || key.includes('tokyo')) return 0;
+  if (key.includes('portugal') || key.includes('lisbon')) return 35;
+  if (key.includes('spain') || key.includes('barcelona')) return 38;
+  if (key.includes('italy')) return 45;
+  if (key.includes('france') || key.includes('paris')) return 50;
+  if (key.includes('greece')) return 210;
+  if (key.includes('iceland')) return 200;
+  if (key.includes('morocco')) return 30;
+  if (key.includes('thailand')) return 150;
+  return (trip.name.charCodeAt(0) * 47) % 360;
+}
+
+function getFlagEmoji(trip: Trip): string {
+  const key = getTripKey(trip);
+  if (key.includes('japan') || key.includes('tokyo') || key.includes('kyoto')) return '🇯🇵';
+  if (key.includes('portugal') || key.includes('lisbon')) return '🇵🇹';
+  if (key.includes('spain') || key.includes('barcelona') || key.includes('madrid')) return '🇪🇸';
+  if (key.includes('france') || key.includes('paris')) return '🇫🇷';
+  if (key.includes('italy') || key.includes('rome')) return '🇮🇹';
+  if (key.includes('greece') || key.includes('athens')) return '🇬🇷';
+  if (key.includes('iceland')) return '🇮🇸';
+  if (key.includes('morocco')) return '🇲🇦';
+  if (key.includes('thailand')) return '🇹🇭';
+  return '✈️';
+}
 
 interface TripCardProps { trip: Trip; onDelete?: (id: string) => void; }
 
 export default function TripCard({ trip, onDelete }: TripCardProps) {
   const [deleting, setDeleting] = useState(false);
-  const status = STATUS_STYLES[trip.status] ?? STATUS_STYLES.planning;
   const totalActivities = trip.days.reduce((sum, d) => sum + d.activities.length, 0);
-  const cover = getTripCoverImage(trip);
+  const duration = tripDuration(trip.startDate, trip.endDate);
+  const hue = getHue(trip);
+  const flag = getFlagEmoji(trip);
+  const statusLabel = STATUS_LABEL[trip.status] ?? 'Planning';
+  const density = trip.days.slice(0, 7).map((d) => Math.min(10, d.activities.length));
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -27,62 +61,81 @@ export default function TripCard({ trip, onDelete }: TripCardProps) {
     try {
       await fetch(`/api/trips/${trip.id}`, { method: 'DELETE' });
       onDelete?.(trip.id);
-    } finally {
-      setDeleting(false);
-    }
+    } finally { setDeleting(false); }
   };
 
   return (
-    <Link href={`/trips/${trip.id}`} className="trip-card group block bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg hover:border-brand-100 transition-all">
+    <Link
+      href={`/trips/${trip.id}`}
+      className="trip-card"
+      style={{ ['--card-h' as string]: hue }}
+    >
       {/* Cover */}
-      <div className="relative h-44 overflow-hidden bg-slate-100">
-        <Image src={cover} alt={trip.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-        {/* Status */}
-        <div className={`absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${status.bg} ${status.text}`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
-          {status.label}
+      <div className="trip-cover">
+        <div className="trip-cover-grad" />
+
+        <div className="trip-status-pill">
+          <span className="trip-status-dot" data-status={trip.status} />
+          {statusLabel}
         </div>
-        {/* Delete */}
-        {onDelete && (
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="absolute top-3 right-3 p-1.5 bg-black/40 hover:bg-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all text-white"
-          >
-            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-          </button>
-        )}
+
+        <div className="trip-meta-row">
+          <span className="trip-meta-date">
+            {formatDate(trip.startDate, 'MMM d')} – {formatDate(trip.endDate, 'MMM d')}
+          </span>
+          {onDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              style={{
+                padding: '4px 8px', borderRadius: 8,
+                background: 'rgba(0,0,0,0.35)', border: 'none', color: 'white',
+                cursor: 'pointer', display: 'flex', alignItems: 'center',
+              }}
+            >
+              {deleting
+                ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
+                : <Trash2 style={{ width: 12, height: 12 }} />}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
-        <h3 className="font-semibold text-slate-900 text-base mb-1 leading-tight group-hover:text-brand-600 transition-colors">{trip.name}</h3>
-        {trip.description && <p className="text-xs text-slate-500 line-clamp-2 mb-3">{trip.description}</p>}
-
-        <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
-          <span className="flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5" />
-            {formatDate(trip.startDate, 'MMM d')} – {formatDate(trip.endDate, 'MMM d, yyyy')}
-          </span>
+      {/* Body */}
+      <div className="trip-body">
+        <div>
+          <div className="trip-destination">
+            <span className="trip-flag">{flag}</span>
+            <h3 className="trip-name">{trip.name}</h3>
+          </div>
+          {trip.description && (
+            <div className="trip-place">{trip.description}</div>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 pt-3 border-t border-slate-50">
-          <div className="flex items-center gap-1 text-xs text-slate-500">
-            <MapPin className="w-3 h-3" />
-            <span>{tripDuration(trip.startDate, trip.endDate)} days</span>
+        <div className="trip-stats">
+          <div className="trip-stat">
+            <span>Days</span>
+            <span className="trip-stat-val">{duration}</span>
           </div>
-          <div className="w-1 h-1 rounded-full bg-slate-200" />
-          <div className="text-xs text-slate-500">{totalActivities} activities</div>
+          <div className="trip-stat">
+            <span>Activities</span>
+            <span className="trip-stat-val">{totalActivities}</span>
+          </div>
           {trip.budget && (
-            <>
-              <div className="w-1 h-1 rounded-full bg-slate-200" />
-              <div className="flex items-center gap-0.5 text-xs text-slate-500">
-                <DollarSign className="w-3 h-3" />
-                {formatCurrency(trip.budget, trip.currency)}
-              </div>
-            </>
+            <div className="trip-stat">
+              <span>Budget</span>
+              <span className="trip-stat-val">${(trip.budget / 1000).toFixed(1)}k</span>
+            </div>
           )}
+          <div className="trip-stat" style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
+            <span>Density</span>
+            <div className="trip-density">
+              {(density.length > 0 ? density : [3, 5, 7, 4, 6]).map((d, i) => (
+                <div key={i} className="trip-density-bar" style={{ height: `${Math.max(4, d * 1.5)}px` }} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </Link>
