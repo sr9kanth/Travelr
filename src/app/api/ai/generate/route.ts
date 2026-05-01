@@ -79,12 +79,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof AIError) {
+      const status = error.code === 'rate_limited' ? 429 : error.code === 'no_key' ? 401 : 422;
       return NextResponse.json(
         { error: error.message, code: error.code, provider: error.provider },
-        { status: error.code === 'rate_limited' ? 429 : 400 },
+        { status },
       );
     }
     console.error('AI generate error:', error);
-    return NextResponse.json({ error: 'Failed to generate itinerary' }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to generate itinerary' },
+      { status: 500 },
+    );
   }
 }

@@ -179,9 +179,41 @@ async function ask(prompt: string, provider: AIProvider, maxTokens = 4096): Prom
 }
 
 function extractJSON(text: string, type: 'object' | 'array'): string | null {
-  const pattern = type === 'object' ? /\{[\s\S]*\}/ : /\[[\s\S]*\]/;
-  const match = text.match(pattern);
-  return match ? match[0] : null;
+  // Strip markdown code fences first
+  const stripped = text.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '');
+
+  const open = type === 'object' ? '{' : '[';
+  const close = type === 'object' ? '}' : ']';
+
+  const start = stripped.indexOf(open);
+  if (start === -1) return null;
+
+  // Walk to find the balanced closing bracket, tolerating truncation
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < stripped.length; i++) {
+    if (stripped[i] === open) depth++;
+    else if (stripped[i] === close) {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+
+  if (end !== -1) return stripped.slice(start, end + 1);
+
+  // Truncated JSON: attempt to close all open brackets/braces
+  let partial = stripped.slice(start);
+  // Remove trailing comma if any
+  partial = partial.replace(/,\s*$/, '');
+
+  const stack: string[] = [];
+  const pairs: Record<string, string> = { '{': '}', '[': ']' };
+  const closes = new Set(['}', ']']);
+  for (const ch of partial) {
+    if (ch === '{' || ch === '[') stack.push(pairs[ch]);
+    else if (closes.has(ch)) stack.pop();
+  }
+  return partial + stack.reverse().join('');
 }
 
 // ── Itinerary Generator ───────────────────────────────────────────────────────
@@ -224,113 +256,98 @@ export async function generateItinerary(
     ? `\nCountry breakdown:\n${params.countryDays.map((c) => `- ${c.country}: ${c.days} days`).join('\n')}`
     : '';
 
-  // When user typed a free-text description, put it front-and-centre
+  // Scale max_tokens with trip length — long trips need more output room
+  // Groq llama-3.3-70b supports up to 32k output; Gemini 1.5 flash supports 8k default
+  const maxTokens = Math.min(32000, Math.max(8000, totalDays * 600));
+
+  const activitySchema = `{
+          "name": "Specific real place name",
+          "type": "food|sightseeing|culture|nature|shopping|experience|hidden_gem",
+          "description": "2-3 sentence description with what makes it special",
+          "location": "Neighbourhood/district name",
+          "address": "Full street address",
+          "lat": 0.000000,
+          "lng": 0.000000,
+          "startTime": "09:00",
+          "endTime": "11:00",
+          "duration": 120,
+          "cost": 25,
+          "timeOfDay": "morning|afternoon|evening|night",
+          "rating": 4.5,
+          "tags": ["tag1", "tag2"],
+          "bookingUrl": null
+        }`;
+
+  const jsonSchema = `{
+  "title": "Descriptive trip title",
+  "description": "2-3 sentence overview of the whole trip",
+  "days": [
+    {
+      "dayNumber": 1,
+      "theme": "Specific day theme e.g. 'Gothic Quarter & Barceloneta Beach'",
+      "activities": [
+        ${activitySchema},
+        ${activitySchema},
+        ${activitySchema}
+      ]
+    }
+  ],
+  "suggestedStays": [
+    { "name": "Hotel name", "type": "hotel|hostel|airbnb|resort", "address": "Full address", "lat": 0.0, "lng": 0.0, "cost": 150, "notes": "Why to stay here" }
+  ],
+  "suggestedTransport": [
+    { "type": "flight|train|bus|ferry", "fromLocation": "Origin city", "toLocation": "Destination city", "notes": "Duration, cost estimate, booking tips" }
+  ]
+}`;
+
+  const qualityRules = `Rules for quality:
+- Use REAL place names with accurate GPS coordinates — no generic "City Museum" or "Local Restaurant"
+- Each day must have 3-4 activities spread across morning, afternoon and evening
+- Vary activity types each day (don't repeat food-food-food or sightseeing-sightseeing)
+- Write descriptions that are specific and enticing, not generic
+- Include hidden gems and local favourites, not just tourist hotspots
+- Costs should be realistic for the destination
+- Return ONLY valid JSON. No markdown fences, no extra text.`;
+
   const prompt = freeTextMode
-    ? `You are an expert travel planner. Plan a complete trip based on the traveller's request below.
+    ? `You are an expert travel planner. Plan a complete trip based on the traveller's request.
 
 Traveller's request: ${params.freePrompt}
 
 Extract all details (destinations, dates, duration, budget, style) from the request above.
-Generate a complete day-by-day itinerary covering every day of the trip.
+Generate a complete day-by-day itinerary covering EVERY day of the trip mentioned.
 
-Return a JSON object with this exact structure:
-{
-  "title": "Trip name",
-  "description": "Brief overview",
-  "days": [
-    {
-      "dayNumber": 1,
-      "theme": "Day theme",
-      "activities": [
-        {
-          "name": "Activity name",
-          "type": "food|sightseeing|culture|nature|shopping|experience|hidden_gem",
-          "description": "Description",
-          "location": "Area name",
-          "address": "Full address",
-          "lat": 0.0,
-          "lng": 0.0,
-          "startTime": "09:00",
-          "endTime": "11:00",
-          "duration": 120,
-          "cost": 25,
-          "timeOfDay": "morning|afternoon|evening|night",
-          "rating": 4.5,
-          "tags": ["tag1", "tag2"],
-          "bookingUrl": null
-        }
-      ]
-    }
-  ],
-  "suggestedStays": [
-    { "name": "Hotel name", "type": "hotel", "address": "Address", "lat": 0.0, "lng": 0.0, "cost": 150, "notes": "Notes" }
-  ],
-  "suggestedTransport": [
-    { "type": "flight|train|bus", "fromLocation": "From", "toLocation": "To", "notes": "Details" }
-  ]
-}
+${qualityRules}
 
-Use real places with accurate lat/lng coordinates. Return ONLY valid JSON, no markdown fences.`
+Return this JSON structure:
+${jsonSchema}`
     : `You are an expert travel planner. Create a detailed day-by-day itinerary.
 
 Destinations: ${(params.destinations ?? []).join(', ')}
 ${params.startDate ? `Dates: ${params.startDate} to ${params.endDate}` : ''}
-Total days: ${totalDays} (you MUST generate exactly ${totalDays} day entries)${countryBreakdown}
+Total days: ${totalDays} — you MUST include exactly ${totalDays} entries in the "days" array${countryBreakdown}
 Budget: ${params.budget ?? 'moderate'}
 Travel Style: ${params.style ?? 'Moderate'}
-Interests: ${(params.interests ?? []).join(', ')}${params.freePrompt ? `\nAdditional instructions from traveller: ${params.freePrompt}` : ''}
+Interests: ${(params.interests ?? []).join(', ')}${params.freePrompt ? `\nExtra instructions: ${params.freePrompt}` : ''}
 
-Return a JSON object with this exact structure:
-{
-  "title": "Trip name",
-  "description": "Brief overview",
-  "days": [
-    {
-      "dayNumber": 1,
-      "theme": "Day theme",
-      "activities": [
-        {
-          "name": "Activity name",
-          "type": "food|sightseeing|culture|nature|shopping|experience|hidden_gem",
-          "description": "Description",
-          "location": "Area name",
-          "address": "Full address",
-          "lat": 0.0,
-          "lng": 0.0,
-          "startTime": "09:00",
-          "endTime": "11:00",
-          "duration": 120,
-          "cost": 25,
-          "timeOfDay": "morning|afternoon|evening|night",
-          "rating": 4.5,
-          "tags": ["tag1", "tag2"],
-          "bookingUrl": null
-        }
-      ]
-    }
-  ],
-  "suggestedStays": [
-    { "name": "Hotel name", "type": "hotel", "address": "Address", "lat": 0.0, "lng": 0.0, "cost": 150, "notes": "Notes" }
-  ],
-  "suggestedTransport": [
-    { "type": "flight|train|bus", "fromLocation": "From", "toLocation": "To", "notes": "Details" }
-  ]
-}
+${qualityRules}
 
-Use real places with accurate lat/lng coordinates. Return ONLY valid JSON, no markdown fences.`;
+Return this JSON structure:
+${jsonSchema}`;
 
   try {
-    const text = await ask(prompt, provider, 4096);
+    const text = await ask(prompt, provider, maxTokens);
     const json = extractJSON(text, 'object');
-    if (json) return JSON.parse(json);
-    return JSON.parse(text);
+    if (!json) throw new Error('No JSON found in response');
+    const parsed = JSON.parse(json);
+    // Validate we got actual days
+    if (!parsed.days || parsed.days.length === 0) throw new Error('Empty days array');
+    return parsed;
   } catch (err) {
     if (err instanceof AIError) throw err;
-    return getMockItinerary({
-      destinations: params.destinations?.length ? params.destinations : ['Your Destination'],
-      style: params.style ?? 'Moderate',
-      totalDays,
-    });
+    // Surface parse errors so the user sees them rather than silent mock fallback
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new AIError(`Failed to parse AI response: ${msg}`, 'model_error', provider);
   }
 }
 

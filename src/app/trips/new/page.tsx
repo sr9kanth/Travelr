@@ -112,14 +112,16 @@ export default function NewTripPage() {
         }),
       });
 
+      const data = await res.json();
+
       if (res.status === 429) {
-        const data = await res.json();
         setAiError(`Rate limited by ${data.provider ?? 'AI'}. Switch provider in the sidebar.`);
         return;
       }
-
-      const data = await res.json();
-      if (data.error) { setAiError(data.error); return; }
+      if (!res.ok) {
+        setAiError(data.error ?? 'Failed to generate itinerary. Try a different AI model.');
+        return;
+      }
       setAiResult(data);
       if (data.tripId) setTimeout(() => router.push(`/trips/${data.tripId}/planner`), 1500);
     } catch {
